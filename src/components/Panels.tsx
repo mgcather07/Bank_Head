@@ -214,13 +214,12 @@ export function RecCard({ rec, rank, onOpen, active }: { rec: HuntRecommendation
     <button className={`rec ${active ? 'active' : ''}`} onClick={onOpen}>
       <div className="rec-rank">{rank}</div>
       <div className="rec-body">
-        <div className="rec-title">{p.label} <span className="muted rec-id">{rec.areaId}</span></div>
+        <div className="rec-top"><div className="rec-title">{p.label} <span className="muted rec-id">{rec.areaId}</span></div><ScorePill score={rec.score} legal={rec.legalStatus} /></div>
         <div className="small">{rec.landJurisdiction} · {SESSION_LABEL[rec.session]} <span className="nowrap">{rec.recommendedWindow?.start}–{rec.recommendedWindow?.end}</span></div>
         <div className="small muted">{rec.route ? `${mi(rec.route.distanceMeters)} est. walk from ${rec.route.name}` : 'No access route'} · wind risk {rec.windAssessment.risk}</div>
         <div className="row tags"><LegalBadge status={rec.legalStatus} /><ConfidenceTag c={rec.confidence} /></div>
         {rec.reasons[0] && <div className="small reason">{rec.reasons[0]}</div>}
       </div>
-      <ScorePill score={rec.score} legal={rec.legalStatus} />
     </button>
   );
 }
