@@ -148,7 +148,9 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       map.addLayer({ id: 'cand-fill', type: 'fill', source: 'cands', paint: { 'fill-color': ['case', ['==', ['get', 'score'], -1], '#7a7a7a', ['interpolate', ['linear'], ['get', 'score'], 35, '#b0413e', 55, '#e0a43a', 75, '#5fbf5a']], 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.8, 14, 0.45] } });
       map.addLayer({ id: 'cand-line', type: 'line', source: 'cands', paint: { 'line-color': '#101510', 'line-width': 0.8 } });
       map.addSource('selected', { type: 'geojson', data: empty });
-      map.addLayer({ id: 'selected-line', type: 'line', source: 'selected', paint: { 'line-color': '#ffffff', 'line-width': 3 } });
+      map.addLayer({ id: 'selected-fill', type: 'fill', source: 'selected', paint: { 'fill-color': '#ffe9a8', 'fill-opacity': 0.18 } });
+      map.addLayer({ id: 'selected-casing', type: 'line', source: 'selected', paint: { 'line-color': '#101510', 'line-width': 7, 'line-opacity': 0.85 } });
+      map.addLayer({ id: 'selected-line', type: 'line', source: 'selected', paint: { 'line-color': '#ffe9a8', 'line-width': 3.5 } });
       map.addSource('cone', { type: 'geojson', data: empty });
       map.addLayer({ id: 'cone', type: 'fill', source: 'cone', paint: { 'fill-color': '#ff9f43', 'fill-opacity': 0.28 } });
       map.addLayer({ id: 'cone-line', type: 'line', source: 'cone', paint: { 'line-color': '#ff9f43', 'line-width': 1, 'line-dasharray': [2, 2] } });

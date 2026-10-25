@@ -147,12 +147,23 @@ export default function App() {
 
   // ---- interactions ----
   const flyTo = (c: [number, number], zoom = 14.5) => mapRef.current?.flyTo({ center: c, zoom, padding: window.innerWidth < 900 ? { bottom: window.innerHeight * 0.45, top: 0, left: 0, right: 0 } : { left: 440, top: 0, bottom: 0, right: 0 } });
+  const mapPadding = () => (window.innerWidth < 900 ? { bottom: window.innerHeight * 0.52 + 40, top: 80, left: 40, right: 40 } : { left: 480, top: 60, bottom: 60, right: 60 });
+  // Zoom the map so the whole scouting polygon is in view (outlined), not just its centre.
+  const fitZone = (r: HuntRecommendation) => {
+    const g = r.geometry;
+    const rings = g.type === 'Polygon' ? g.coordinates : g.type === 'MultiPolygon' ? g.coordinates.flat() : [];
+    const pts = rings.flat() as [number, number][];
+    if (!pts.length) return flyTo(r.center);
+    const lons = pts.map((p) => p[0]), lats = pts.map((p) => p[1]);
+    mapRef.current?.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: mapPadding(), maxZoom: 16, duration: 900 });
+  };
   const openRec = (r: HuntRecommendation) => {
     setSelectedKey({ id: r.areaId, session: r.session, date: r.huntDate });
     setInspect(null);
     setWindHourIdx(0);
     setTab('hunt');
-    flyTo(r.center);
+    if (sheet === 'full') setSheet('half');
+    fitZone(r);
     panelRef.current?.scrollTo({ top: 0 });
   };
   const onCandidate = (id: string) => {
