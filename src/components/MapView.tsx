@@ -21,6 +21,7 @@ export interface LayerToggles {
   streams: boolean;
   contours: boolean;
   slope: boolean;
+  disturbance: boolean;
   candidates: boolean;
   access: boolean;
   pins: boolean;
@@ -124,6 +125,10 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       if (map.getSource('wma')) return;
       map.addSource('slope', { type: 'image', url: `${import.meta.env.BASE_URL}data/slope.png`, coordinates: SLOPE_BOUNDS });
       map.addLayer({ id: 'slope', type: 'raster', source: 'slope', paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
+      map.addSource('disturbance', { type: 'image', url: `${import.meta.env.BASE_URL}data/disturbance.png`, coordinates: SLOPE_BOUNDS });
+      map.addLayer({ id: 'disturbance', type: 'raster', source: 'disturbance', paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
+      map.addSource('fuel', { type: 'geojson', data: data.fuelTreatments });
+      map.addLayer({ id: 'fuel-line', type: 'line', source: 'fuel', paint: { 'line-color': '#ff8a3d', 'line-width': 1.5, 'line-dasharray': [2, 2] }, layout: { visibility: 'none' } });
       map.addSource('contours', { type: 'geojson', data: data.contours });
       map.addLayer({ id: 'contours', type: 'line', source: 'contours', paint: { 'line-color': '#c9a46a', 'line-width': ['case', ['get', 'index'], 1.2, 0.5], 'line-opacity': 0.75 }, minzoom: 11 });
       map.addLayer({ id: 'contour-labels', type: 'symbol', source: 'contours', minzoom: 13.5, filter: ['get', 'index'], layout: { 'symbol-placement': 'line', 'text-field': ['concat', ['to-string', ['get', 'elevFt']], ' ft'], 'text-size': 10, 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#e8d3a8', 'text-halo-color': '#1b231d', 'text-halo-width': 1.2 } });
@@ -155,7 +160,8 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       map.addLayer({ id: 'cone', type: 'fill', source: 'cone', paint: { 'fill-color': '#ff9f43', 'fill-opacity': 0.28 } });
       map.addLayer({ id: 'cone-line', type: 'line', source: 'cone', paint: { 'line-color': '#ff9f43', 'line-width': 1, 'line-dasharray': [2, 2] } });
       map.addSource('route', { type: 'geojson', data: empty });
-      map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': '#7ad0ff', 'line-width': 2.5, 'line-dasharray': [1, 1.5] } });
+      map.addLayer({ id: 'route-casing', type: 'line', source: 'route', paint: { 'line-color': '#0b1a26', 'line-width': 6, 'line-opacity': 0.7 } });
+      map.addLayer({ id: 'route', type: 'line', source: 'route', paint: { 'line-color': ['match', ['get', 'leg'], 'offtrail', '#ffd27a', '#7ad0ff'], 'line-width': 3, 'line-dasharray': ['match', ['get', 'leg'], 'offtrail', ['literal', [1, 1.5]], ['literal', [1, 0]]] } });
       map.addSource('access', { type: 'geojson', data: { type: 'FeatureCollection', features: [...data.accessPoints.features] } });
       map.addLayer({ id: 'access', type: 'circle', source: 'access', paint: { 'circle-radius': 6, 'circle-color': ['match', ['get', 'kind'], 'checking station', '#ff5c5c', '#3fa7ff'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
       map.addLayer({ id: 'access-label', type: 'symbol', source: 'access', minzoom: 11, layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#fff', 'text-halo-color': '#000', 'text-halo-width': 1.2 } });
@@ -185,6 +191,7 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       vis(['streams'], layers.streams);
       vis(['contours', 'contour-labels'], layers.contours);
       vis(['slope'], layers.slope);
+      vis(['disturbance', 'fuel-line'], layers.disturbance);
       vis(['cand-fill', 'cand-line'], layers.candidates);
       vis(['access', 'access-label'], layers.access);
       vis(['pins'], layers.pins);
@@ -212,9 +219,18 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       (map.getSource('selected') as GeoJSONSource | undefined)?.setData(sel as FeatureCollection);
       const dw = windHour?.downwind ?? selected?.windAssessment.scentDownwindDegrees;
       (map.getSource('cone') as GeoJSONSource | undefined)?.setData(selected && dw != null ? { type: 'FeatureCollection', features: [scentCone(selected.center, dw)] } : empty);
-      (map.getSource('route') as GeoJSONSource | undefined)?.setData(
-        selected?.route ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [selected.route.coord, selected.center] } }] } : empty,
-      );
+      const r = selected?.route;
+      let routeFc: FeatureCollection = empty;
+      if (r) {
+        const path = r.path?.length >= 2 ? r.path : [r.coord, selected!.center];
+        if (r.routeKind === 'network+offtrail' && r.offTrailMeters > 5 && path.length >= 3) {
+          routeFc = { type: 'FeatureCollection', features: [
+            { type: 'Feature', properties: { leg: 'network' }, geometry: { type: 'LineString', coordinates: path.slice(0, -1) } },
+            { type: 'Feature', properties: { leg: 'offtrail' }, geometry: { type: 'LineString', coordinates: path.slice(-2) } },
+          ] };
+        } else routeFc = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: { leg: r.routeKind === 'straight' ? 'offtrail' : 'network' }, geometry: { type: 'LineString', coordinates: path } }] };
+      }
+      (map.getSource('route') as GeoJSONSource | undefined)?.setData(routeFc);
     };
     whenReady(apply);
   }, [selected, windHour, mapRef]);

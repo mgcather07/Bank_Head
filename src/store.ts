@@ -49,14 +49,14 @@ export function usePins() {
   const [pins, setPins] = usePersisted<UserPin[]>('bh.pins.v1', []);
   const add = useCallback((p: Omit<UserPin, 'id' | 'created'>) => setPins((x) => [...x, { ...p, id: uid(), created: new Date().toISOString() }]), [setPins]);
   const remove = useCallback((id: string) => setPins((x) => x.filter((p) => p.id !== id)), [setPins]);
-  return { pins, add, remove };
+  return { pins, add, remove, setAll: setPins };
 }
 
 export function useJournal() {
   const [entries, setEntries] = usePersisted<JournalEntry[]>('bh.journal.v1', []);
   const save = useCallback((e: JournalEntry) => setEntries((x) => [e, ...x.filter((y) => y.id !== e.id)]), [setEntries]);
   const remove = useCallback((id: string) => setEntries((x) => x.filter((p) => p.id !== id)), [setEntries]);
-  return { entries, save, remove };
+  return { entries, save, remove, setAll: setEntries };
 }
 
 export { usePersisted };

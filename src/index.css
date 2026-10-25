@@ -262,3 +262,16 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
   .detail > .row.wrap .btn-primary { flex-basis: 100%; }
   .coords { font-size: .8rem; }
 }
+
+/* ---- routes, profile, offline, backup, compass ---- */
+.profile { margin: 8px 0; background: #121a14; border-radius: 8px; padding: 6px; }
+.big-bar { height: 10px; margin: 8px 0; }
+.areas li { margin: 6px 0; }
+.file-btn { position: relative; overflow: hidden; display: inline-flex; align-items: center; cursor: pointer; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.compass-wrap { position: absolute; z-index: 5; left: 444px; top: 120px; width: 300px; padding: 12px; margin: 0; }
+.compass-dial { width: 100%; max-width: 260px; display: block; margin: 0 auto; }
+@media (max-width: 899px) {
+  .compass-wrap { left: 8px; right: 8px; top: auto; width: auto; bottom: calc(66px + env(safe-area-inset-bottom)); max-height: 60vh; max-height: 60dvh; overflow-y: auto; }
+  .compass-dial { max-width: 220px; }
+}

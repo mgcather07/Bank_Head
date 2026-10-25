@@ -28,6 +28,12 @@ export interface RouteOption {
   coord: [number, number];
   verification: string;
   straightLineMeters: number;
+  walkMeters: number;
+  onNetworkMeters: number;
+  offTrailMeters: number;
+  routeKind: 'network+offtrail' | 'straight';
+  path: [number, number][];
+  profile: [number, number][]; // [distM, elevM]
   gainInMeters: number;
   gainOutMeters: number;
   maxSlopeDeg: number;
@@ -64,6 +70,7 @@ export interface CandidateProps {
     oak: number;
     edgeDensity: number;
   };
+  disturbance: { fireRecent: number; fireMid: number; fireOld: number; mechRecent: number; mechOld: number; other: number };
   beddingCoverBearing: number | null;
   beddingCoverConsistency: number | null;
   foodWaterBearing: number | null;
@@ -178,7 +185,7 @@ export interface HuntRecommendation {
   weatherFactors: string[];
   windAssessment: WindAssessment;
   recommendedWindow?: { start: string; end: string };
-  route?: { verifiedAccessPointId: string; name: string; distanceMeters: number; elevationGainMeters?: number; verification: string; coord: [number, number] };
+  route?: { verifiedAccessPointId: string; name: string; distanceMeters: number; elevationGainMeters?: number; verification: string; coord: [number, number]; routeKind: RouteOption['routeKind']; onNetworkMeters: number; offTrailMeters: number; path: [number, number][]; profile: [number, number][] };
   reasons: string[];
   warnings: string[];
   improvements: string[];

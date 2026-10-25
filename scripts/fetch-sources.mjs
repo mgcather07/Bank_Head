@@ -104,6 +104,17 @@ const LAYERS = [
     usage: 'Public agency data.',
   },
   {
+    id: 'usfs-fuel-treatments',
+    agency: 'USDA Forest Service (FACTS)',
+    title: 'Hazardous Fuels Treatments – polygons (prescribed burns)',
+    url: `${FS}/EDW_HazardousFuelsTreatments_01/MapServer/15`,
+    where: '1=1',
+    fields: 'activity,treatment_type,treatment_name,activity_unit_name,fiscal_year_completed,fy_planned_or_accomplished,stage_value,gis_acres',
+    file: 'fuel-treatments.geojson',
+    resolution: 'Vector; FACTS activity polygons. Only 5 features in this bbox (FY2007) — Bankhead burn history is not fully published here.',
+    usage: 'Public domain (USFS EDW).',
+  },
+  {
     id: 'usfs-road-basic',
     agency: 'USDA Forest Service',
     title: 'National Forest System Roads (road inventory – NOT an MVUM designation)',

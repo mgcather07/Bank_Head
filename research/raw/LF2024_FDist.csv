@@ -1,0 +1,67 @@
+VALUE,D_TYPE,D_SEVERITY,D_TIME,R,G,B,RED,GREEN,BLUE
+-9999,Fill-NoData,Fill-NoData,Fill-NoData,255,255,255,1,1,1
+-1111,Fill-Not Mapped,Fill-Not Mapped,Fill-Not Mapped,111,111,111,0.435294,0.435294,0.435294
+0,No Disturbance,NA,NA,0,0,0,0,0,0
+111,Fire,Low,One Year,214,96,77,0.839216,0.376471,0.301961
+112,Fire,Low,Two to Five Years,214,96,77,0.839216,0.376471,0.301961
+113,Fire,Low,Six to Ten Years,214,96,77,0.839216,0.376471,0.301961
+121,Fire,Moderate,One Year,214,96,77,0.839216,0.376471,0.301961
+122,Fire,Moderate,Two to Five Years,214,96,77,0.839216,0.376471,0.301961
+123,Fire,Moderate,Six to Ten Years,214,96,77,0.839216,0.376471,0.301961
+131,Fire,High,One Year,214,96,77,0.839216,0.376471,0.301961
+132,Fire,High,Two to Five Years,214,96,77,0.839216,0.376471,0.301961
+133,Fire,High,Six to Ten Years,214,96,77,0.839216,0.376471,0.301961
+211,Mechanical Add,Low,One Year,244,165,130,0.956863,0.647059,0.509804
+212,Mechanical Add,Low,Two to Five Years,244,165,130,0.956863,0.647059,0.509804
+213,Mechanical Add,Low,Six to Ten Years,244,165,130,0.956863,0.647059,0.509804
+221,Mechanical Add,Moderate,One Year,244,165,130,0.956863,0.647059,0.509804
+222,Mechanical Add,Moderate,Two to Five Years,244,165,130,0.956863,0.647059,0.509804
+223,Mechanical Add,Moderate,Six to Ten Years,244,165,130,0.956863,0.647059,0.509804
+231,Mechanical Add,High,One Year,244,165,130,0.956863,0.647059,0.509804
+232,Mechanical Add,High,Two to Five Years,244,165,130,0.956863,0.647059,0.509804
+233,Mechanical Add,High,Six to Ten Years,244,165,130,0.956863,0.647059,0.509804
+311,Mechanical Remove,Low,One Year,253,219,199,0.992157,0.858824,0.780392
+312,Mechanical Remove,Low,Two to Five Years,253,219,199,0.992157,0.858824,0.780392
+313,Mechanical Remove,Low,Six to Ten Years,253,219,199,0.992157,0.858824,0.780392
+321,Mechanical Remove,Moderate,One Year,253,219,199,0.992157,0.858824,0.780392
+322,Mechanical Remove,Moderate,Two to Five Years,253,219,199,0.992157,0.858824,0.780392
+323,Mechanical Remove,Moderate,Six to Ten Years,253,219,199,0.992157,0.858824,0.780392
+331,Mechanical Remove,High,One Year,253,219,199,0.992157,0.858824,0.780392
+332,Mechanical Remove,High,Two to Five Years,253,219,199,0.992157,0.858824,0.780392
+333,Mechanical Remove,High,Six to Ten Years,253,219,199,0.992157,0.858824,0.780392
+411,Windthrow,Low,One Year,209,229,240,0.819608,0.898039,0.941176
+412,Windthrow,Low,Two to Five Years,209,229,240,0.819608,0.898039,0.941176
+413,Windthrow,Low,Six to Ten Years,209,229,240,0.819608,0.898039,0.941176
+421,Windthrow,Moderate,One Year,209,229,240,0.819608,0.898039,0.941176
+422,Windthrow,Moderate,Two to Five Years,209,229,240,0.819608,0.898039,0.941176
+423,Windthrow,Moderate,Six to Ten Years,209,229,240,0.819608,0.898039,0.941176
+431,Windthrow,High,One Year,209,229,240,0.819608,0.898039,0.941176
+432,Windthrow,High,Two to Five Years,209,229,240,0.819608,0.898039,0.941176
+433,Windthrow,High,Six to Ten Years,209,229,240,0.819608,0.898039,0.941176
+511,Insects-Disease,Low,One Year,146,197,222,0.572549,0.772549,0.870588
+512,Insects-Disease,Low,Two to Five Years,146,197,222,0.572549,0.772549,0.870588
+513,Insects-Disease,Low,Six to Ten Years,146,197,222,0.572549,0.772549,0.870588
+521,Insects-Disease,Moderate,One Year,146,197,222,0.572549,0.772549,0.870588
+522,Insects-Disease,Moderate,Two to Five Years,146,197,222,0.572549,0.772549,0.870588
+523,Insects-Disease,Moderate,Six to Ten Years,146,197,222,0.572549,0.772549,0.870588
+531,Insects-Disease,High,One Year,146,197,222,0.572549,0.772549,0.870588
+532,Insects-Disease,High,Two to Five Years,146,197,222,0.572549,0.772549,0.870588
+533,Insects-Disease,High,Six to Ten Years,146,197,222,0.572549,0.772549,0.870588
+611,Mechanical Unknown,Low,One Year,67,147,197,0.262745,0.576471,0.772549
+612,Mechanical Unknown,Low,Two to Five Years,67,147,197,0.262745,0.576471,0.772549
+613,Mechanical Unknown,Low,Six to Ten Years,67,147,197,0.262745,0.576471,0.772549
+621,Mechanical Unknown,Moderate,One Year,67,147,197,0.262745,0.576471,0.772549
+622,Mechanical Unknown,Moderate,Two to Five Years,67,147,197,0.262745,0.576471,0.772549
+623,Mechanical Unknown,Moderate,Six to Ten Years,67,147,197,0.262745,0.576471,0.772549
+631,Mechanical Unknown,High,One Year,67,147,197,0.262745,0.576471,0.772549
+632,Mechanical Unknown,High,Two to Five Years,67,147,197,0.262745,0.576471,0.772549
+633,Mechanical Unknown,High,Six to Ten Years,67,147,197,0.262745,0.576471,0.772549
+711,Mastication,Low,One Year,33,102,172,0.129412,0.4,0.67451
+712,Mastication,Low,Two to Five Years,33,102,172,0.129412,0.4,0.67451
+713,Mastication,Low,Six to Ten Years,33,102,172,0.129412,0.4,0.67451
+721,Mastication,Moderate,One Year,33,102,172,0.129412,0.4,0.67451
+722,Mastication,Moderate,Two to Five Years,33,102,172,0.129412,0.4,0.67451
+723,Mastication,Moderate,Six to Ten Years,33,102,172,0.129412,0.4,0.67451
+731,Mastication,High,One Year,33,102,172,0.129412,0.4,0.67451
+732,Mastication,High,Two to Five Years,33,102,172,0.129412,0.4,0.67451
+733,Mastication,High,Six to Ten Years,33,102,172,0.129412,0.4,0.67451

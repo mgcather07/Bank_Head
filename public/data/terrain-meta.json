@@ -1,6 +1,6 @@
 {
-  "algorithmVersion": "terrain-1.0.0",
-  "generated": "2026-10-25T03:17:03.349Z",
+  "algorithmVersion": "terrain-1.1.0",
+  "generated": "2026-10-25T04:21:05.687Z",
   "bbox": [
     -87.56,
     34.2,
@@ -27,6 +27,7 @@
     "zoneDividerUncertaintyM": 400
   },
   "counts": {
+    "networkNodes": 13432,
     "raw": 1340,
     "rejected": {
       "outsideWma": 497,
@@ -67,6 +68,18 @@
       "url": "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_EVT_CONUS/ImageServer/exportImage?bbox=-87.56,34.2,-87.2,34.47&bboxSR=4326&imageSR=4326&size=1296,972&format=tiff&pixelType=S16&interpolation=RSP_NearestNeighbor",
       "retrieved": "2026-10-25T03:12:37.745Z",
       "checksum": "18359b024e958ca0",
+      "quality": "retrieved",
+      "coverage": "bbox -87.56,34.2,-87.2,34.47"
+    },
+    {
+      "id": "landfire-lf2024-fdist",
+      "agency": "USGS / USFS LANDFIRE",
+      "title": "LF2024 Fuel Disturbance (FDist): disturbance type, severity and age (1 / 2–5 / 6–10 yr)",
+      "resolution": "30 m native, nearest-neighbour resampled",
+      "usage": "Public domain",
+      "url": "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_FDist_CONUS/ImageServer/exportImage?bbox=-87.56,34.2,-87.2,34.47&bboxSR=4326&imageSR=4326&size=1296,972&format=tiff&pixelType=S16&interpolation=RSP_NearestNeighbor",
+      "retrieved": "2026-10-25T04:20:14.542Z",
+      "checksum": "d7a01b202e6d95ff",
       "quality": "retrieved",
       "coverage": "bbox -87.56,34.2,-87.2,34.47"
     }

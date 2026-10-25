@@ -10,6 +10,7 @@ import type { Jurisdiction } from '../engine/geography';
 import type { SourceRegistry } from '../data';
 import type { JournalEntry } from '../store';
 import type { PeakTimeline } from '../engine/peak';
+import type { SavedArea } from '../engine/offline';
 import { uid } from '../store';
 
 export const SESSION_LABEL: Record<Session, string> = { morning: 'Morning', midday: 'Midday', evening: 'Evening' };
@@ -64,7 +65,15 @@ export function SettingsBar({ prefs, onOpen }: { prefs: HuntPreferences; onOpen:
 }
 
 /** One-line summary shown when the sheet is collapsed to a strip. */
-export function PeekBar({ ratings, selected }: { ratings: Record<Session, HuntRecommendation | null>; selected: HuntRecommendation | null }) {
+export function legalLightLeft(sun: SunDay, now = Date.now()): string | null {
+  if (now < sun.legalStart) { const m = Math.round((sun.legalStart - now) / 60000); return m < 600 ? `legal light in ${Math.floor(m / 60)}h ${m % 60}m` : null; }
+  if (now > sun.legalEnd) return null;
+  const m = Math.round((sun.legalEnd - now) / 60000);
+  return `${Math.floor(m / 60)}h ${m % 60}m of legal light left`;
+}
+
+export function PeekBar({ ratings, selected, sun }: { ratings: Record<Session, HuntRecommendation | null>; selected: HuntRecommendation | null; sun?: SunDay }) {
+  const left = sun ? legalLightLeft(sun) : null;
   if (selected) {
     return (
       <div className="peek">
@@ -78,7 +87,7 @@ export function PeekBar({ ratings, selected }: { ratings: Record<Session, HuntRe
   return (
     <div className="peek">
       <div className="peek-scores"><span className="tiny muted">AM</span><ScorePill score={m?.score ?? null} legal={m?.legalStatus} /><span className="tiny muted">PM</span><ScorePill score={e?.score ?? null} legal={e?.legalStatus} /></div>
-      <div className="peek-text"><b>{m || e ? `${best} favored` : 'No legal zones'}</b><div className="tiny muted">tap for top areas</div></div>
+      <div className="peek-text"><b>{m || e ? `${best} favored` : 'No legal zones'}</b><div className="tiny muted">{left ?? 'tap for top areas'}</div></div>
     </div>
   );
 }
@@ -224,6 +233,23 @@ export function RecCard({ rec, rank, onOpen, active }: { rec: HuntRecommendation
   );
 }
 
+export function zoneUrl(rec: HuntRecommendation) {
+  const u = new URL(window.location.href);
+  u.search = '';
+  u.searchParams.set('zone', rec.areaId);
+  u.searchParams.set('date', rec.huntDate);
+  u.searchParams.set('session', rec.session);
+  return u.toString();
+}
+async function shareZone(rec: HuntRecommendation) {
+  const url = zoneUrl(rec);
+  const text = `${rec.candidate.label} ${rec.areaId} · ${rec.landJurisdiction} · ${rec.huntDate} ${SESSION_LABEL[rec.session]} · score ${rec.score ?? '—'}`;
+  try {
+    if (navigator.share) await navigator.share({ title: 'Bankhead Hunt Intelligence', text, url });
+    else { await navigator.clipboard.writeText(url); alert('Link copied.'); }
+  } catch { /* cancelled */ }
+}
+
 export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap, timeline }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void; timeline?: PeakTimeline | null }) {
   const p = rec.candidate;
   const [open, setOpen] = useState<string | null>('why');
@@ -250,6 +276,7 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         <button className="btn" onClick={onSave} disabled={saved}>{saved ? '★ Saved' : '☆ Save zone'}</button>
         <button className="btn" onClick={onJournal}>Log hunt</button>
         {onShowMap && <button className="btn mobile-only" onClick={onShowMap}>🗺 Show on map</button>}
+        <button className="btn" onClick={() => shareZone(rec)}>⇪ Share</button>
       </div>
       <p className="tiny muted">This is a scouting zone, not a verified stand location or proof that deer are present.</p>
 
@@ -283,6 +310,9 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
           <li>Slope {p.slopeDeg}° (area mean {p.meanSlopeDeg}°), local relief {p.localReliefM} m, aspect {p.aspectName}, TPI local {p.tpiLocal} / landscape {p.tpiLandscape}.</li>
           <li>{p.distStreamM} m to derived stream channel · {p.distRoadM} m to mapped road · {p.distTrailM} m to NFS trail.</li>
           <li>Habitat (LANDFIRE 30 m, potential only): {rec.habitatIndicators.join(' · ') || 'no strong indicators'}; edge density {Math.round(p.habitat.edgeDensity * 100)}%.</li>
+          {p.disturbance && (p.disturbance.fireRecent + p.disturbance.fireMid + p.disturbance.fireOld + p.disturbance.mechRecent + p.disturbance.mechOld > 0.02 ? (
+            <li>Disturbance (LANDFIRE FDist): {[p.disturbance.fireRecent > 0.02 && `burn ≤1 yr ${Math.round(p.disturbance.fireRecent * 100)}%`, p.disturbance.fireMid > 0.02 && `burn 2–5 yr ${Math.round(p.disturbance.fireMid * 100)}%`, p.disturbance.fireOld > 0.02 && `burn 6–10 yr ${Math.round(p.disturbance.fireOld * 100)}%`, p.disturbance.mechRecent > 0.02 && `timber/mechanical ≤5 yr ${Math.round(p.disturbance.mechRecent * 100)}%`, p.disturbance.mechOld > 0.02 && `timber/mechanical 6–10 yr ${Math.round(p.disturbance.mechOld * 100)}%`].filter(Boolean).join(' · ')}.</li>
+          ) : <li>No mapped burn or timber disturbance in the last 10 years (LANDFIRE FDist).</li>)}
         </ul>
         <p className="tiny muted">Status: derived / habitat potential. Current acorn drop, deer trails and beds are not observable from these data.</p>
       </Sec>
@@ -290,12 +320,17 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         {rec.route ? (
           <ul className="small">
             <li>Start: <b>{rec.route.name}</b> ({rec.route.coord[1].toFixed(5)}, {rec.route.coord[0].toFixed(5)})</li>
-            <li>Distance: ~{mi(rec.route.distanceMeters)} estimated walk (straight line × 1.3). <b>Not a verified traversable route.</b></li>
-            <li>Elevation gain in: ~{Math.round((rec.route.elevationGainMeters ?? 0) * 3.28)} ft (straight-line profile).</li>
+            {rec.route.routeKind === 'network+offtrail' ? (
+              <li>Walk: <b>{mi(rec.route.distanceMeters)}</b> — {mi(rec.route.onNetworkMeters)} along mapped FS road/trail, then {rec.route.offTrailMeters} m off-trail (×1.35 allowance). Road/trail centerlines are from USFS inventory, not a field-checked path.</li>
+            ) : (
+              <li>Walk: ~{mi(rec.route.distanceMeters)} <b>straight-line estimate</b> (×1.35) — no mapped road or trail reaches within 1.5 km of this zone. Not a traversable route.</li>
+            )}
+            <li>Elevation gain in: ~{Math.round((rec.route.elevationGainMeters ?? 0) * 3.28)} ft; max slope on route {p.routes.find((r) => r.accessPointId === rec.route!.verifiedAccessPointId)?.maxSlopeDeg ?? '—'}°.</li>
             <li>{rec.route.verification}</li>
             <li>Approach heading {compass(p.routes.find((r) => r.accessPointId === rec.route!.verifiedAccessPointId)?.approachBearing ?? null)}.</li>
           </ul>
         ) : <p className="small">No access point within range.</p>}
+        {rec.route && rec.route.profile?.length > 2 && <Profile profile={rec.route.profile} offTrailM={rec.route.offTrailMeters} gainInM={rec.route.elevationGainMeters ?? 0} />}
         <p className="tiny muted">Road appearance does not prove legal vehicle access. Check the USFS Motor Vehicle Use Map and posted gates.</p>
       </Sec>
       <Sec id="legal" title="Regulations at this location">
@@ -365,6 +400,63 @@ export function PeakTimes({ t }: { t: PeakTimeline }) {
       {!t.hasForecast && <p className="tiny warn">No wind forecast for this date yet — peaks reflect movement timing only.</p>}
       <p className="tiny muted">Blends typical deer movement (dawn/dusk), this hour's wind for this zone, weather and solunar. Relative timing guide, not a prediction that deer will move.</p>
     </div>
+  );
+}
+
+// ---------------- Elevation profile ----------------
+export function Profile({ profile, offTrailM, gainInM }: { profile: [number, number][]; offTrailM: number; gainInM: number }) {
+  const W = 320, H = 90, padL = 34, padB = 16;
+  const ds = profile.map((p) => p[0]), zs = profile.map((p) => p[1] * 3.28084);
+  const dMax = Math.max(...ds) || 1, zMin = Math.min(...zs), zMax = Math.max(...zs);
+  const span = Math.max(40, zMax - zMin);
+  const x = (d: number) => padL + (d / dMax) * (W - padL - 6);
+  const y = (z: number) => 4 + (1 - (z - zMin) / span) * (H - padB - 4);
+  const pts = profile.map((p, i) => `${x(p[0]).toFixed(1)},${y(zs[i]).toFixed(1)}`).join(' ');
+  const offStart = dMax - offTrailM;
+  return (
+    <div className="profile">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" aria-label="Elevation profile of the walk">
+        {offTrailM > 5 && <rect x={x(Math.max(0, offStart))} y={0} width={W - 6 - x(Math.max(0, offStart))} height={H - padB} fill="#ffd27a18" />}
+        <polyline points={`${padL},${H - padB} ${pts} ${x(dMax)},${H - padB}`} fill="#7ad0ff22" stroke="none" />
+        <polyline points={pts} fill="none" stroke="#7ad0ff" strokeWidth="2" />
+        <text x={2} y={10} fontSize="9" fill="#9fae9f">{Math.round(zMax)} ft</text>
+        <text x={2} y={H - padB} fontSize="9" fill="#9fae9f">{Math.round(zMin)} ft</text>
+        <text x={padL} y={H - 3} fontSize="9" fill="#9fae9f">0</text>
+        <text x={W - 6} y={H - 3} fontSize="9" fill="#9fae9f" textAnchor="end">{(dMax / 1609).toFixed(2)} mi</text>
+      </svg>
+      <div className="tiny muted">Elevation along the route (USGS 3DEP). Shaded = off-trail leg. Total climb on the way in ~{Math.round(gainInM * 3.28084)} ft.</div>
+    </div>
+  );
+}
+
+// ---------------- Offline maps ----------------
+export function OfflinePanel({ areas, onSaveCurrent, onRemove, onShow, progress, cachedTiles, online }: { areas: SavedArea[]; onSaveCurrent: () => void; onRemove: (a: SavedArea) => void; onShow: (a: SavedArea) => void; progress: { done: number; total: number; failed: number } | null; cachedTiles: number | null; online: boolean }) {
+  return (
+    <section className="card">
+      <h2>Offline maps</h2>
+      <p className="small">Save the area you're looking at on the Map tab (zoom 11–15 topo/satellite tiles) so the map works with no signal. Zones, boundaries, roads and the last forecast are already kept offline once loaded.</p>
+      <button className="btn btn-primary" onClick={onSaveCurrent} disabled={!!progress || !online}>{progress ? `Downloading ${progress.done}/${progress.total}…` : online ? '⤓ Save current map view for offline' : 'Offline — reconnect to download'}</button>
+      {progress && <div className="bar big-bar"><i style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} /></div>}
+      {progress && progress.failed > 0 && <p className="tiny warn">{progress.failed} tiles failed.</p>}
+      {areas.length > 0 && <ul className="small areas">{areas.map((a) => <li key={a.id}><b>{a.name}</b> · {a.base} · {a.tiles} tiles (~{(a.bytesApprox / 1e6).toFixed(0)} MB) · {a.saved.slice(0, 10)} <button className="btn btn-ghost small" onClick={() => onShow(a)}>Show</button> <button className="btn btn-ghost small" onClick={() => onRemove(a)}>Remove</button></li>)}</ul>}
+      <p className="tiny muted">{cachedTiles != null && `${cachedTiles} tiles cached on this device. `}iOS may clear website storage after weeks of non-use; re-save before the season. Offline mode shows cached forecasts and regulations with their age — it never claims they are current.</p>
+    </section>
+  );
+}
+
+// ---------------- Backup ----------------
+export function BackupPanel({ onExportJson, onExportGpx, onImport, counts }: { onExportJson: () => void; onExportGpx: () => void; onImport: (file: File) => void; counts: { pins: number; journal: number } }) {
+  return (
+    <section className="card">
+      <h2>Backup &amp; restore</h2>
+      <p className="small">Pins and journal live only on this device. Export a backup now and then; import it on a new phone or after clearing Safari data. Importing merges — nothing is overwritten.</p>
+      <div className="row wrap">
+        <button className="btn btn-primary" onClick={onExportJson}>⤓ Export backup (.json)</button>
+        <button className="btn" onClick={onExportGpx} disabled={!counts.pins}>⤓ Pins as GPX</button>
+        <label className="btn file-btn">⤒ Import .json / .gpx<input type="file" accept=".json,.gpx,application/json,application/gpx+xml" onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.currentTarget.value = ''; }} /></label>
+      </div>
+      <p className="tiny muted">{counts.pins} pins · {counts.journal} journal entries on this device.</p>
+    </section>
   );
 }
 
@@ -450,7 +542,8 @@ export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart
 }
 
 // ---------------- Journal & pins ----------------
-export function JournalPanel({ entries, onSave, onDelete, pins, onDeletePin, draft, onFly }: { entries: JournalEntry[]; onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; pins: UserPin[]; onDeletePin: (id: string) => void; draft: Partial<JournalEntry> | null; onFly: (c: [number, number]) => void }) {
+export function JournalPanel({ entries, onSave, onDelete, pins, onDeletePin, draft, onFly, onFetchWeather }: { entries: JournalEntry[]; onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; pins: UserPin[]; onDeletePin: (id: string) => void; draft: Partial<JournalEntry> | null; onFly: (c: [number, number]) => void; onFetchWeather: (date: string, coord: [number, number] | null) => Promise<string | null> }) {
+  const [wxBusy, setWxBusy] = useState(false);
   const blank = (): JournalEntry => ({ id: uid(), date: localDate(), start: '', end: '', location: '', coord: null, method: 'bow', weather: '', windObserved: '', deerSeen: 0, behavior: '', harvest: 'none', pressure: 'none', sign: '', notes: '', created: new Date().toISOString(), ...draft });
   const [e, setE] = useState<JournalEntry>(blank);
   const set = <K extends keyof JournalEntry>(k: K, v: JournalEntry[K]) => setE({ ...e, [k]: v });
@@ -472,7 +565,7 @@ export function JournalPanel({ entries, onSave, onDelete, pins, onDeletePin, dra
           <label>Hunter pressure<select value={e.pressure} onChange={(x) => set('pressure', x.target.value as JournalEntry['pressure'])}>{['none', 'low', 'moderate', 'high'].map((m) => <option key={m}>{m}</option>)}</select></label>
           <label>Wind observed<input value={e.windObserved} onChange={(x) => set('windObserved', x.target.value)} placeholder="NW swirling" /></label>
         </div>
-        <label>Weather<input value={e.weather} onChange={(x) => set('weather', x.target.value)} /></label>
+        <label>Weather<div className="row"><input value={e.weather} onChange={(x) => set('weather', x.target.value)} className="grow" /><button className="btn small" disabled={wxBusy} onClick={async () => { setWxBusy(true); const t = await onFetchWeather(e.date, e.coord); setWxBusy(false); if (t) set('weather', t); else alert('No archived weather for that date yet (Open-Meteo lags a few days).'); }}>{wxBusy ? '…' : 'Auto-fill'}</button></div></label>
         <label>Deer behavior<input value={e.behavior} onChange={(x) => set('behavior', x.target.value)} /></label>
         <label>Sign found<input value={e.sign} onChange={(x) => set('sign', x.target.value)} /></label>
         <label>Notes<textarea rows={3} value={e.notes} onChange={(x) => set('notes', x.target.value)} /></label>

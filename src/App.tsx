@@ -2,7 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MLMap } from 'maplibre-gl';
 import { loadData, type AppData } from './data';
 import { MapView, type BaseMap, type LayerToggles } from './components/MapView';
-import { HuntForm, InspectCard, JournalPanel, Outlook, PeekBar, RecCard, RecDetail, ScorePill, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
+import { BackupPanel, HuntForm, InspectCard, JournalPanel, OfflinePanel, Outlook, PeekBar, RecCard, RecDetail, ScorePill, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
+import { CompassView } from './components/Compass';
+import { cachedTileCount, downloadArea, removeArea, tilesFor, type SavedArea } from './engine/offline';
+import { downloadText, gpxToPins, makeBackup, mergeById, parseBackup, pinsToGpx } from './engine/backup';
+import { getNormals, getPastDay, type Normals } from './engine/climate';
 import { TabBar, TabIcon } from './components/TabBar';
 import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, WeatherBundle } from './engine/types';
 import { addDays, BANKHEAD_CENTER, fmtDate, localDate, sessionWindows, sunDay } from './engine/time';
@@ -11,7 +15,7 @@ import { evaluateCandidate, rankCandidates, sessionsFor } from './engine/scoring
 import { lookupJurisdiction } from './engine/geography';
 import { peakTimeline } from './engine/peak';
 import { evaluateLegal } from './engine/regulations';
-import { useJournal, usePersisted, usePins, type JournalEntry } from './store';
+import { useJournal, usePersisted, usePins, uid, type JournalEntry } from './store';
 
 type Tab = 'map' | 'hunt' | 'outlook' | 'journal' | 'sources';
 const PAGE_TITLE: Record<Tab, string> = { map: 'Map', hunt: 'Hunt', outlook: '7-Day Outlook', journal: 'Journal & Pins', sources: 'Info & Sources' };
@@ -21,7 +25,7 @@ const BBOX = [-87.56, 34.2, -87.2, 34.47];
 const inStudyArea = (p: [number, number] | null) => !!p && p[0] > BBOX[0] && p[0] < BBOX[2] && p[1] > BBOX[1] && p[1] < BBOX[3];
 
 const DEFAULT_PREFS: HuntPreferences = { date: localDate(), session: 'compare', weapon: 'bow', target: 'any', maxWalkMeters: 3200, stand: 'climber', effort: 'balanced', youthHunter: false, start: null };
-const DEFAULT_LAYERS: LayerToggles = { boundaries: true, ownership: true, wilderness: true, roads: true, trails: true, streams: true, contours: true, slope: false, candidates: true, access: true, pins: true };
+const DEFAULT_LAYERS: LayerToggles = { boundaries: true, ownership: true, wilderness: true, roads: true, trails: true, streams: true, contours: true, slope: false, disturbance: false, candidates: true, access: true, pins: true };
 
 export default function App() {
   const [data, setData] = useState<AppData | null>(null);
@@ -78,13 +82,31 @@ export default function App() {
   const [showLayers, setShowLayers] = useState(false);
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [journalDraft, setJournalDraft] = useState<Partial<JournalEntry> | null>(null);
-  const { pins, add: addPin, remove: removePin } = usePins();
+  const { pins, add: addPin, remove: removePin, setAll: setPins } = usePins();
+  const [normals, setNormals] = useState<Normals | null>(null);
+  const [areas, setAreas] = usePersisted<SavedArea[]>('bh.areas.v1', []);
+  const [dlProgress, setDlProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
+  const [cachedTiles, setCachedTiles] = useState<number | null>(null);
+  const [showCompass, setShowCompass] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
   const journal = useJournal();
   const mapRef = useRef<MLMap | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    loadData().then(setData).catch((e) => setLoadError(String(e)));
+    loadData().then((d) => {
+      setData(d);
+      // ?zone=BH-..&date=YYYY-MM-DD&session=evening — shared link opens that zone
+      const q = new URLSearchParams(window.location.search);
+      const zone = q.get('zone');
+      if (zone && d.candidates.some((c) => c.properties.id === zone)) {
+        const date = q.get('date') && q.get('date')! >= localDate() ? q.get('date')! : localDate();
+        const session = (['morning', 'midday', 'evening'].includes(q.get('session') ?? '') ? q.get('session') : 'evening') as Session;
+        setSelectedKey({ id: zone, session, date });
+        setTab(window.matchMedia('(max-width: 899px)').matches ? 'map' : 'hunt');
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }).catch((e) => setLoadError(String(e)));
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener('online', on);
     window.addEventListener('offline', off);
@@ -104,6 +126,8 @@ export default function App() {
     setRefreshing(false);
   }, [wxKey]);
   useEffect(() => { refreshWeather(); }, [refreshWeather]);
+  useEffect(() => { const [lon, lat] = wxKey.split(',').map(Number); getNormals(lat, lon).then(setNormals); }, [wxKey]);
+  useEffect(() => { cachedTileCount().then(setCachedTiles); }, [areas]);
   useEffect(() => {
     const t = setInterval(() => refreshWeather(), 30 * 60 * 1000);
     return () => clearInterval(t);
@@ -112,8 +136,8 @@ export default function App() {
   // ---- ranking (all sessions for the chosen date) ----
   const ranked = useMemo(() => {
     if (!data) return null;
-    return rankCandidates(data.candidates, { prefs: { ...prefs, session: 'compare' }, weather, pins }, 5);
-  }, [data, prefs, weather, pins]);
+    return rankCandidates(data.candidates, { prefs: { ...prefs, session: 'compare' }, weather, pins, normals }, 5);
+  }, [data, prefs, weather, pins, normals]);
   const wanted = sessionsFor(prefs.session);
   const recs = useMemo(() => {
     if (!ranked) return [];
@@ -129,7 +153,7 @@ export default function App() {
     for (const c of data.candidates) {
       let best: number | null = null;
       for (const s of wanted) {
-        const r = evaluateCandidate(c, s, { prefs, weather, pins });
+        const r = evaluateCandidate(c, s, { prefs, weather, pins, normals });
         if (r.legalStatus === 'verified_prohibited') continue;
         if (r.score != null && (best == null || r.score > best)) best = r.score;
       }
@@ -137,19 +161,19 @@ export default function App() {
     }
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, prefs, weather, pins]);
+  }, [data, prefs, weather, pins, normals]);
 
   const selected = useMemo<HuntRecommendation | null>(() => {
     if (!selectedKey || !data) return null;
     const c = data.candidates.find((x) => x.properties.id === selectedKey.id);
-    return c ? evaluateCandidate(c, selectedKey.session, { prefs: { ...prefs, date: selectedKey.date }, weather, pins }) : null;
-  }, [selectedKey, data, prefs, weather, pins]);
+    return c ? evaluateCandidate(c, selectedKey.session, { prefs: { ...prefs, date: selectedKey.date }, weather, pins, normals }) : null;
+  }, [selectedKey, data, prefs, weather, pins, normals]);
   const selectedCompare = useMemo(() => {
     if (!selectedKey || !data) return {};
     const c = data.candidates.find((x) => x.properties.id === selectedKey.id);
     if (!c) return {};
-    return Object.fromEntries((['morning', 'midday', 'evening'] as Session[]).map((s) => [s, evaluateCandidate(c, s, { prefs: { ...prefs, date: selectedKey.date }, weather, pins })]));
-  }, [selectedKey, data, prefs, weather, pins]);
+    return Object.fromEntries((['morning', 'midday', 'evening'] as Session[]).map((s) => [s, evaluateCandidate(c, s, { prefs: { ...prefs, date: selectedKey.date }, weather, pins, normals })]));
+  }, [selectedKey, data, prefs, weather, pins, normals]);
 
   const timeline = useMemo(() => {
     if (!selectedKey || !data) return null;
@@ -171,7 +195,7 @@ export default function App() {
     const today = localDate();
     return Array.from({ length: 7 }, (_, i) => {
       const date = addDays(today, i);
-      const ctx = { prefs: { ...prefs, date }, weather, pins };
+      const ctx = { prefs: { ...prefs, date }, weather, pins, normals };
       const m = rankCandidates(data.candidates, { ...ctx, prefs: { ...ctx.prefs, session: 'morning' } }, 1);
       const e = rankCandidates(data.candidates, { ...ctx, prefs: { ...ctx.prefs, session: 'evening' } }, 1);
       const sel = selectedKey ? data.candidates.find((c) => c.properties.id === selectedKey.id) : null;
@@ -184,7 +208,64 @@ export default function App() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, view, prefs, weather, pins, selectedKey]);
+  }, [data, view, prefs, weather, pins, selectedKey, normals]);
+
+  // deep-linked selection: fit once the map and data exist
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (!deepLinked.current && selected && mapRef.current && data) { deepLinked.current = true; setTimeout(() => fitZone(selected), 600); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, data]);
+
+  // ---- offline areas ----
+  const saveCurrentArea = async () => {
+    const m = mapRef.current;
+    if (!m) return;
+    const b = m.getBounds();
+    const bbox: [number, number, number, number] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    const n = tilesFor(bbox).length;
+    if (n > 2500) { alert(`That view needs ${n} tiles (limit 2,500). Zoom in a little and try again.`); return; }
+    if (!confirm(`Download ${n} ${base} tiles (~${Math.round((n * 18) / 1000)} MB) for offline use?`)) return;
+    setDlProgress({ done: 0, total: n, failed: 0 });
+    try {
+      const r = await downloadArea(bbox, base, (done, total, failed) => setDlProgress({ done, total, failed }));
+      const name = `${base} · ${b.getCenter().lat.toFixed(3)}, ${b.getCenter().lng.toFixed(3)} · z${Math.round(m.getZoom())}`;
+      setAreas((a) => [{ id: uid(), name, bbox, base, tiles: r.done, bytesApprox: r.bytes, saved: new Date().toISOString() }, ...a]);
+      if (r.failed) alert(`${r.failed} tiles failed to download; try again later for a complete pack.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDlProgress(null);
+    }
+  };
+  const removeSavedArea = async (a: SavedArea) => { await removeArea(a); setAreas((x) => x.filter((y) => y.id !== a.id)); };
+
+  // ---- backup ----
+  const exportJson = () => downloadText(`bankhead-backup-${localDate()}.json`, JSON.stringify(makeBackup(pins, journal.entries, prefs, areas), null, 1));
+  const exportGpxAll = () => downloadText(`bankhead-pins-${localDate()}.gpx`, pinsToGpx(pins), 'application/gpx+xml');
+  const importFile = async (f: File) => {
+    try {
+      const text = await f.text();
+      if (/\.gpx$/i.test(f.name) || text.trimStart().startsWith('<')) {
+        const incoming = gpxToPins(text).map((p) => ({ ...p, id: uid(), created: new Date().toISOString() }));
+        setPins((cur) => [...cur, ...incoming]);
+        setImportMsg(`Imported ${incoming.length} pins from GPX.`);
+      } else {
+        const b = parseBackup(text);
+        const before = { p: pins.length, j: journal.entries.length };
+        setPins((cur) => mergeById(cur, b.pins));
+        journal.setAll((cur) => mergeById(cur, b.journal));
+        setImportMsg(`Imported backup from ${b.exported.slice(0, 10)}: +${b.pins.filter((x) => !pins.some((y) => y.id === x.id)).length} pins, +${b.journal.filter((x) => !journal.entries.some((y) => y.id === x.id)).length} journal entries (had ${before.p}/${before.j}).`);
+      }
+    } catch (e) {
+      setImportMsg(`Import failed: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+  const fetchJournalWeather = async (date: string, coord: [number, number] | null) => {
+    const c = coord ?? wxPoint;
+    const d = await getPastDay(c[1], c[0], date);
+    return d?.summary ?? null;
+  };
 
   // ---- interactions ----
   // On phones the map fills the screen between the header and the tab bar; leave room for the floating card.
@@ -213,7 +294,7 @@ export default function App() {
     const c = data?.candidates.find((x) => x.properties.id === id);
     if (!c) return;
     // open the best of the requested sessions
-    const evals = wanted.map((s) => evaluateCandidate(c, s, { prefs, weather, pins }));
+    const evals = wanted.map((s) => evaluateCandidate(c, s, { prefs, weather, pins, normals }));
     const best = evals.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
     // On the phone map, keep the map in view and show a summary card instead of leaving the map.
     if (isMobile && view === 'map') showOnMap(best);
@@ -275,6 +356,8 @@ export default function App() {
       <div className="map-tools">
         <button className="btn fab" onClick={() => setShowLayers(!showLayers)} aria-expanded={showLayers}>Layers</button>
         <button className="btn fab" onClick={onGps} aria-label="Locate me">◎</button>
+        <button className={`btn fab ${showCompass ? 'btn-on' : ''}`} onClick={() => { setShowCompass(!showCompass); setShowLayers(false); }} aria-label="Compass">⌖</button>
+        <button className="btn fab" onClick={saveCurrentArea} aria-label="Save this view for offline" disabled={!!dlProgress}>{dlProgress ? `${Math.round((dlProgress.done / dlProgress.total) * 100)}%` : '⤓'}</button>
         {showLayers && (
           <>
             <div className="popover-backdrop" onClick={() => setShowLayers(false)} />
@@ -287,6 +370,7 @@ export default function App() {
                 <div><i style={{ background: '#5fbf5a' }} />High <i style={{ background: '#e0a43a' }} />Medium <i style={{ background: '#b0413e' }} />Low <i style={{ background: '#7a7a7a' }} />Not legal</div>
                 <div><i className="ln" style={{ background: '#f2b84b' }} />WMA <i className="ln" style={{ background: '#ffd84d' }} />Zone A|B (AL 33) <i style={{ background: '#d64545', opacity: 0.5 }} />Non-FS land</div>
                 <div><i className="ln" style={{ background: '#e36b5b' }} />NFS trail <i className="ln" style={{ background: '#f0e6d2' }} />FS road <i style={{ background: '#3fa7ff', borderRadius: 8 }} />Access</div>
+                <div><i style={{ background: '#ff7828' }} />Burn ≤1 yr <i style={{ background: '#ffaa3c' }} />2–5 yr <i style={{ background: '#e6c878' }} />6–10 yr <i style={{ background: '#78c8ff' }} />Timber/mech. <i className="ln" style={{ background: '#7ad0ff' }} />Route <i className="ln" style={{ background: '#ffd27a' }} />Off-trail</div>
               </div>
               <button className="btn btn-primary layers-done" onClick={() => setShowLayers(false)}>Done</button>
             </div>
@@ -301,7 +385,12 @@ export default function App() {
         </div>
       )}
 
-      {isMobile && view === 'map' && !showLayers && (
+      {showCompass && (
+        <div className={`compass-wrap card ${isMobile ? 'map-card' : ''}`}>
+          <CompassView windFrom={(windHour?.from ?? selected?.windAssessment.windFromDegrees ?? weather?.current?.windFrom) ?? null} windMph={weather?.current?.windMph ?? null} onClose={() => setShowCompass(false)} />
+        </div>
+      )}
+      {isMobile && view === 'map' && !showLayers && !showCompass && (
         <div className="map-card">
           {inspect && jur && jurLegal ? (
             <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />
@@ -320,7 +409,7 @@ export default function App() {
             </div>
           ) : (
             <button className="card mini mini-summary" onClick={() => switchTab('hunt')}>
-              <PeekBar ratings={ratings} selected={null} />
+              <PeekBar ratings={ratings} selected={null} sun={sun} />
             </button>
           )}
         </div>
@@ -393,10 +482,17 @@ export default function App() {
             </>
           )}
           {view === 'outlook' && <Outlook days={outlook} compareId={selectedKey?.id ?? null} onPick={(date, r) => { setPrefs({ ...prefs, date }); openRec(r); }} />}
-          {view === 'journal' && <JournalPanel key={journalDraft?.candidateId ?? 'j'} entries={journal.entries} onSave={journal.save} onDelete={journal.remove} pins={pins} onDeletePin={removePin} draft={journalDraft} onFly={(c) => { if (isMobile) switchTab('map'); flyTo(c, 15); }} />}
+          {view === 'journal' && (
+            <>
+              <JournalPanel key={journalDraft?.candidateId ?? 'j'} entries={journal.entries} onSave={journal.save} onDelete={journal.remove} pins={pins} onDeletePin={removePin} draft={journalDraft} onFly={(c) => { if (isMobile) switchTab('map'); flyTo(c, 15); }} onFetchWeather={fetchJournalWeather} />
+              <BackupPanel onExportJson={exportJson} onExportGpx={exportGpxAll} onImport={importFile} counts={{ pins: pins.length, journal: journal.entries.length }} />
+              {importMsg && <p className="small card">{importMsg}</p>}
+            </>
+          )}
           {view === 'sources' && (
             <>
               {!standalone && <section className="card install-card"><h2>Use it like an app</h2><p className="small">Add Bankhead Hunt to your home screen to open it full-screen and keep viewed map tiles for weak-signal areas.</p><button className="btn btn-primary" onClick={onInstall}>⤓ Install / Add to Home Screen</button></section>}
+              <OfflinePanel areas={areas} onSaveCurrent={() => { if (isMobile) switchTab('map'); saveCurrentArea(); }} onRemove={removeSavedArea} onShow={(a) => { if (isMobile) switchTab('map'); mapRef.current?.fitBounds([[a.bbox[0], a.bbox[1]], [a.bbox[2], a.bbox[3]]], { padding: 20 }); }} progress={dlProgress} cachedTiles={cachedTiles} online={online} />
               <SourcesPanel registry={data?.registry ?? null} />
             </>
           )}
@@ -409,5 +505,5 @@ export default function App() {
 }
 
 const LAYER_LABEL: Record<keyof LayerToggles, string> = {
-  boundaries: 'WMA / NF / Zone A|B boundaries', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
+  boundaries: 'WMA / NF / Zone A|B boundaries', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', disturbance: 'Burns & timber (LANDFIRE)', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
 };

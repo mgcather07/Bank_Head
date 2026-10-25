@@ -10,6 +10,9 @@ import { parseOpenMeteo, getWeather, dataAge } from './weather';
 import { evaluateCandidate, rankCandidates, WEIGHTS } from './scoring';
 import { rutPhase } from './rut';
 import { peakTimeline, solunarPeriods, movementAt } from './peak';
+import { tilesFor, lon2x, lat2y } from './offline';
+import { mergeById, parseBackup, pinsToGpx } from './backup';
+import { normalFor, type Normals } from './climate';
 
 const DATA = path.resolve(__dirname, '../../public/data');
 const read = (f: string) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
@@ -309,5 +312,83 @@ describe('peak times', () => {
     const good = peakTimeline(c, '2026-10-24', prefs, mk((c.properties.beddingCoverBearing! + 90) % 360));
     const pm = (t: ReturnType<typeof peakTimeline>) => Math.max(...t.hours.filter((h) => h.time > t.sun.solarNoon).map((h) => h.score));
     expect(pm(good)).toBeGreaterThan(pm(bad));
+  });
+});
+
+// ---------------- Routes & disturbance (precomputed) ----------------
+describe('routes and disturbance data', () => {
+  it('every candidate has ≤2 routes with a path, profile and walk distance ≥ straight line', () => {
+    for (const c of candidates) {
+      expect(c.properties.routes.length).toBeGreaterThan(0);
+      expect(c.properties.routes.length).toBeLessThanOrEqual(2);
+      for (const r of c.properties.routes) {
+        expect(r.path.length).toBeGreaterThanOrEqual(2);
+        expect(r.profile.length).toBeGreaterThanOrEqual(2);
+        expect(r.walkMeters).toBeGreaterThanOrEqual(r.straightLineMeters * 0.99);
+        if (r.routeKind === 'network+offtrail') expect(r.onNetworkMeters + r.offTrailMeters).toBeGreaterThan(0);
+      }
+    }
+  });
+  it('most zones are reached by a mapped road or trail', () => {
+    const net = candidates.filter((c) => c.properties.routes[0].routeKind === 'network+offtrail').length;
+    expect(net / candidates.length).toBeGreaterThan(0.5);
+  });
+  it('disturbance fractions are present and bounded', () => {
+    for (const c of candidates.slice(0, 50)) {
+      const d = c.properties.disturbance;
+      const sum = d.fireRecent + d.fireMid + d.fireOld + d.mechRecent + d.mechOld + d.other;
+      expect(sum).toBeGreaterThanOrEqual(0);
+      expect(sum).toBeLessThanOrEqual(1.001);
+    }
+    expect(candidates.some((c) => c.properties.disturbance.fireMid > 0.1)).toBe(true);
+  });
+  it('scoring uses the routed walk distance and explains straight-line fallbacks', () => {
+    const prefs = { date: '2026-10-24', session: 'compare' as const, weapon: 'bow' as const, target: 'any' as const, maxWalkMeters: 4000, stand: 'climber' as const, effort: 'balanced' as const, youthHunter: false, start: null };
+    const c = candidates.find((x) => x.properties.routes[0].routeKind === 'network+offtrail')!;
+    const r = evaluateCandidate(c, 'evening', { prefs, weather: null, pins: [] });
+    expect(r.route!.distanceMeters).toBe(c.properties.routes[0].walkMeters);
+    const s = candidates.find((x) => x.properties.routes[0].routeKind === 'straight');
+    if (s) expect(evaluateCandidate(s, 'evening', { prefs, weather: null, pins: [] }).components.find((k) => k.key === 'access')!.negatives.join(' ')).toMatch(/straight-line/);
+  });
+});
+
+// ---------------- Offline tiles ----------------
+describe('offline tiles', () => {
+  it('tile math is monotonic and in range', () => {
+    expect(lon2x(-87.36, 11)).toBeGreaterThan(lon2x(-87.56, 11) - 1);
+    expect(lat2y(34.2, 11)).toBeGreaterThan(lat2y(34.47, 11)); // y grows southward
+    expect(lon2x(-87.36, 11)).toBeLessThan(2 ** 11);
+    expect(lon2x(-87.36, 12)).toBe(Math.floor(lon2x(-87.36, 11) * 2) + (lon2x(-87.36, 12) % 2));
+  });
+  it('tile counts grow ~4× per zoom level', () => {
+    const t = tilesFor([-87.40, 34.30, -87.30, 34.36], 11, 15);
+    const byZ = [11, 12, 13, 14, 15].map((z) => t.filter((x) => x[0] === z).length);
+    expect(byZ[0]).toBeGreaterThan(0);
+    expect(byZ[4]).toBeGreaterThanOrEqual(byZ[0] * 16);
+    expect(t.length).toBeLessThan(2500);
+  });
+});
+
+// ---------------- Backup ----------------
+describe('backup', () => {
+  it('merge keeps existing and adds only new ids', () => {
+    const m = mergeById([{ id: 'a', v: 1 }], [{ id: 'a', v: 2 }, { id: 'b', v: 3 }]);
+    expect(m).toEqual([{ id: 'a', v: 1 }, { id: 'b', v: 3 }]);
+  });
+  it('rejects foreign files and round-trips pins through GPX text', () => {
+    expect(() => parseBackup('{"foo":1}')).toThrow();
+    const gpx = pinsToGpx([{ id: 'x', kind: 'rub', coord: [-87.3, 34.3], note: 'fresh <rub>', created: '2026-10-24T00:00:00Z' }]);
+    expect(gpx).toContain('lat="34.3"');
+    expect(gpx).toContain('&lt;rub&gt;');
+  });
+});
+
+// ---------------- Climate normals ----------------
+describe('climate', () => {
+  it('normalFor reads by month-day', () => {
+    const n: Normals = { lat: 0, lon: 0, fetchedAt: 0, years: 10, byDay: { '10-24': { tMax: 71, tMin: 47, n: 150 } } };
+    expect(normalFor(n, '2026-10-24')?.tMax).toBe(71);
+    expect(normalFor(n, '2026-10-25')).toBeNull();
+    expect(normalFor(null, '2026-10-24')).toBeNull();
   });
 });

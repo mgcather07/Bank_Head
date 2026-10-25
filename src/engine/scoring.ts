@@ -7,10 +7,11 @@ import { rutPhase } from './rut';
 import { isWeekend, localDate, sessionWindows, sunDay, fmtTime, type SunDay } from './time';
 import { dataAge, hoursBetween, pressureTrend } from './weather';
 import { haversine } from './geography';
+import { normalFor, type Normals } from './climate';
 
-export const MODEL_VERSION = 'bhi-score-1.0.0';
+export const MODEL_VERSION = 'bhi-score-1.1.0';
 export const WEIGHTS = { terrain: 0.25, wind: 0.25, access: 0.2, time: 0.15, weather: 0.1, evidence: 0.05 } as const;
-export const TORTUOSITY = 1.3; // straight-line → rough walking-distance estimate (labelled as estimate)
+export const TORTUOSITY = 1.35; // fallback only: straight-line → walking estimate when no network route exists
 
 const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -19,6 +20,7 @@ export interface ScoreContext {
   prefs: HuntPreferences;
   weather: WeatherBundle | null;
   pins: UserPin[];
+  normals?: Normals | null;
   now?: number;
 }
 
@@ -27,7 +29,7 @@ function chooseRoute(c: Candidate, prefs: HuntPreferences): RouteOption | null {
   if (!routes.length) return null;
   if (prefs.start) {
     // prefer the access point nearest the hunter's chosen starting point
-    return [...routes].sort((a, b) => haversine(prefs.start!, a.coord) + a.straightLineMeters - (haversine(prefs.start!, b.coord) + b.straightLineMeters))[0];
+    return [...routes].sort((a, b) => haversine(prefs.start!, a.coord) + a.walkMeters - (haversine(prefs.start!, b.coord) + b.walkMeters))[0];
   }
   return routes[0];
 }
@@ -43,6 +45,13 @@ function terrainComponent(c: Candidate): ScoreComponent {
   else if (p.habitat.hardwood > 0.4) pos.push(`Hardwood cover ${pct(p.habitat.hardwood)} (LANDFIRE).`);
   if (p.habitat.edgeDensity > 0.15) pos.push('Cover-type transitions present (edge habitat).');
   if (p.habitat.earlySuccessional > 0.03) pos.push(`Early-successional/open vegetation ${pct(p.habitat.earlySuccessional)} nearby (browse/cover potential).`);
+  const d = p.disturbance;
+  if (d) {
+    if (d.fireMid > 0.1) pos.push(`Burned 2–5 years ago on ${pct(d.fireMid)} of the area (LANDFIRE) — fresh browse and understory cover.`);
+    else if (d.fireRecent > 0.1) pos.push(`Burned within the last year on ${pct(d.fireRecent)} (LANDFIRE) — open understory, browse still recovering.`);
+    else if (d.fireOld > 0.15) pos.push(`Burned 6–10 years ago on ${pct(d.fireOld)} (LANDFIRE).`);
+    if (d.mechRecent > 0.1) pos.push(`Recent timber/mechanical treatment on ${pct(d.mechRecent)} (LANDFIRE) — early-successional edge.`);
+  }
   if (p.steepFraction > 0.35) neg.push(`${pct(p.steepFraction)} of the area is steeper than 25°.`);
   if (p.habitat.conifer > 0.6) neg.push(`Conifer-dominant (${pct(p.habitat.conifer)}) — limited mast potential.`);
   if (p.habitat.developedAg > 0.2) neg.push('Developed/agricultural cover mapped nearby.');
@@ -54,14 +63,17 @@ function accessComponent(c: Candidate, prefs: HuntPreferences, route: RouteOptio
   const p = c.properties;
   const pos: string[] = [], neg: string[] = [];
   if (!route) return { key: 'access', label: 'Access & pressure', weight: WEIGHTS.access, value: 0.2, positives: [], negatives: ['No verified access point within range.'] };
-  const walk = route.straightLineMeters * TORTUOSITY;
+  const walk = route.walkMeters;
   let v = 0.7;
   const target = prefs.effort === 'easy' ? [200, 900] : prefs.effort === 'balanced' ? [700, 1800] : [1500, 4000];
-  if (walk < target[0]) { v -= prefs.effort === 'deep' ? 0.25 : 0.05; neg.push(`Close to access (${Math.round(walk)} m est.) — likely higher hunter traffic.`); }
-  else if (walk > target[1]) { v -= 0.2; neg.push(`Walk (~${(walk / 1609).toFixed(1)} mi est.) is longer than your ${prefs.effort} preference.`); }
-  else { v += 0.15; pos.push(`Walk length fits your ${prefs.effort} preference (~${(walk / 1609).toFixed(1)} mi est.).`); }
-  if (route.gainInMeters > 90) { v -= 0.1; neg.push(`~${Math.round(route.gainInMeters * 3.28)} ft of climbing on the way in (straight-line profile).`); }
-  if (route.maxSlopeDeg > 28) { v -= session === 'morning' ? 0.12 : 0.06; neg.push(`Steep ground (${route.maxSlopeDeg}°) on the straight-line approach — ${session === 'morning' ? 'hazardous in darkness' : 'plan exit after dark'}.`); }
+  const est = route.routeKind === 'straight' ? ' est.' : '';
+  if (walk < target[0]) { v -= prefs.effort === 'deep' ? 0.25 : 0.05; neg.push(`Close to access (${Math.round(walk)} m${est}) — likely higher hunter traffic.`); }
+  else if (walk > target[1]) { v -= 0.2; neg.push(`Walk (${(walk / 1609).toFixed(1)} mi${est}) is longer than your ${prefs.effort} preference.`); }
+  else { v += 0.15; pos.push(`Walk length fits your ${prefs.effort} preference (${(walk / 1609).toFixed(1)} mi${est}).`); }
+  if (route.routeKind === 'network+offtrail') pos.push(`${(route.onNetworkMeters / 1609).toFixed(1)} mi on mapped road/trail, then ${route.offTrailMeters} m off-trail.`);
+  else neg.push('No mapped road or trail leads near this zone — the walk is a straight-line estimate.');
+  if (route.gainInMeters > 90) { v -= 0.1; neg.push(`~${Math.round(route.gainInMeters * 3.28)} ft of climbing on the way in.`); }
+  if (route.maxSlopeDeg > 28) { v -= session === 'morning' ? 0.12 : 0.06; neg.push(`Steep ground (${route.maxSlopeDeg}°) along the approach — ${session === 'morning' ? 'hazardous in darkness' : 'plan exit after dark'}.`); }
   if (p.distRoadM < 250) { v -= 0.12; neg.push(`Within ${p.distRoadM} m of a road — pressure proxy.`); }
   else if (p.distRoadM > 800) { v += 0.05; pos.push(`${(p.distRoadM / 1609).toFixed(1)} mi from the nearest mapped road.`); }
   if (p.distTrailM < 150) { v -= 0.08; neg.push('On/near a mapped trail — foot traffic likely.'); }
@@ -124,6 +136,15 @@ function weatherComponent(ctx: ScoreContext, start: number, end: number): ScoreC
     if (d <= -8) { v += 0.15; pos.push(`Notable cool-down (${Math.round(d)}°F vs. yesterday) — often associated with increased daylight activity.`); }
     if (d >= 8) { v -= 0.08; neg.push(`Warmer than yesterday by ${Math.round(d)}°F.`); }
   } else factors.push(`${Math.round(avgT)}°F`);
+  const nrm = normalFor(ctx.normals ?? null, localDate(start + 12 * 3600000));
+  if (nrm) {
+    const hiHrs = hrs.map((h) => h.tempF).filter((x): x is number => x != null);
+    const dayHi = Math.max(...hiHrs);
+    const anom = dayHi - nrm.tMax;
+    factors.push(`${anom >= 0 ? '+' : ''}${Math.round(anom)}° vs. ${ctx.normals!.years}-yr normal high (${Math.round(nrm.tMax)}°F)`);
+    if (anom <= -8) { v += 0.1; pos.push(`Well below the seasonal normal (${Math.round(anom)}°F vs. 10-yr average) — cooler than deer are acclimated to.`); }
+    else if (anom >= 10) { v -= 0.1; neg.push(`Well above the seasonal normal (+${Math.round(anom)}°F vs. 10-yr average).`); }
+  }
   if (avgT > 78) { v -= 0.12; neg.push('Warm temperatures tend to suppress daylight movement.'); }
   const rain = hrs.reduce((a, h) => a + (h.precipIn ?? 0), 0);
   const maxProb = Math.max(...hrs.map((h) => h.precipProb ?? 0));
@@ -166,7 +187,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   let score = comps.reduce((a, k) => a + k.weight * k.value, 0) * 100;
   const warnings: string[] = [];
   if (wind.risk === 'high') { score = Math.min(score, 45); warnings.push('Severe wind mismatch for this session — score capped.'); }
-  if (route && route.straightLineMeters * TORTUOSITY > prefs.maxWalkMeters) warnings.push('Estimated walk exceeds your maximum walking distance.');
+  if (route && route.walkMeters > prefs.maxWalkMeters) warnings.push('Walk exceeds your maximum walking distance.');
   if (legal.status !== 'verified_allowed') warnings.push(legal.summary);
   if (p.wilderness) warnings.push('Sipsey Wilderness — no motorized/mechanized equipment (incl. game carts); pack-in/pack-out.');
   if (prefs.stand === 'climber' || prefs.stand === 'hang_on' || prefs.stand === 'saddle') warnings.push('Tree suitability cannot be verified remotely — inspect trees on site; full-body harness and tether required (WMA rule).');
@@ -193,6 +214,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   const improvements: string[] = [];
   if (wind.risk !== 'low' && p.beddingCoverBearing != null) improvements.push(`Hunt this zone on a wind that blows scent away from the ${compass(p.beddingCoverBearing)} (bedding side), e.g. a wind out of the ${compass(p.beddingCoverBearing)}.`);
   if (route && route.kind === 'roadside') improvements.push('Scout the access in daylight to confirm a legal pull-off and gate status.');
+  if (route && route.routeKind === 'straight') improvements.push('Walk in from the nearest mapped road or trail and log the actual route as pins.');
   if (comps[5].value <= 0.4) improvements.push('Scout for rubs, scrapes, trails and beds and log them as private pins — verified sign raises confidence.');
   if (session === 'morning' && p.type === 'bottom') improvements.push('Consider this zone as an evening sit instead.');
   if (route && route.maxSlopeDeg > 28) improvements.push('Pick an alternate access that follows the ridge rather than the steep side-slope.');
@@ -218,13 +240,14 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
     weatherFactors: (comps[4] as ScoreComponent & { factors?: string[] }).factors ?? [],
     windAssessment: wind,
     recommendedWindow: { start: fmtTime(win.start), end: fmtTime(win.end) },
-    route: route ? { verifiedAccessPointId: route.accessPointId, name: route.name, distanceMeters: Math.round(route.straightLineMeters * TORTUOSITY), elevationGainMeters: route.gainInMeters, verification: route.verification, coord: route.coord } : undefined,
+    route: route ? { verifiedAccessPointId: route.accessPointId, name: route.name, distanceMeters: route.walkMeters, elevationGainMeters: route.gainInMeters, verification: route.verification, coord: route.coord, routeKind: route.routeKind, onNetworkMeters: route.onNetworkMeters, offTrailMeters: route.offTrailMeters, path: route.path, profile: route.profile } : undefined,
     reasons,
     warnings,
     improvements,
     evidence: [
       { sourceId: 'usgs-3dep-dem', timestamp: 'see Sources', status: 'derived' },
       { sourceId: 'landfire-lf2024-evt', timestamp: 'see Sources', status: 'habitat_potential' },
+      { sourceId: 'landfire-lf2024-fdist', timestamp: 'see Sources', status: 'derived' },
       { sourceId: 'adcnr-wma-boundary', timestamp: 'see Sources', status: 'observed' },
       { sourceId: 'open-meteo', timestamp: ctx.weather ? new Date(ctx.weather.fetchedAt).toISOString() : 'unavailable', status: ctx.weather ? 'forecast' : 'missing' },
       { sourceId: 'adcnr-bw-wma-2026-27', timestamp: '2026-27', status: 'regulation' },

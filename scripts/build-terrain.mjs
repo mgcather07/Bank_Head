@@ -11,6 +11,7 @@ import { fromArrayBuffer } from 'geotiff';
 import { PNG } from 'pngjs';
 import { contours as d3contours } from 'd3-contour';
 import * as turf from '@turf/turf';
+import { buildNetwork, nearestNode, dijkstra, pathTo } from './lib/network.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const RAW = path.join(ROOT, 'research', 'raw');
@@ -19,7 +20,7 @@ const BBOX = [-87.56, 34.2, -87.2, 34.47];
 const W = 1296;
 const H = 972; // 1 arc-second grid
 const DEG = 1 / 3600;
-export const ALGORITHM_VERSION = 'terrain-1.0.0';
+export const ALGORITHM_VERSION = 'terrain-1.1.0';
 
 const sources = [];
 
@@ -55,6 +56,26 @@ const evt = await download(
   'evt_lf2024.tif',
   { agency: 'USGS / USFS LANDFIRE', title: 'LF2024 Existing Vegetation Type (EVT)', resolution: '30 m native, nearest-neighbour resampled. Not suitable for individual trees.', usage: 'Public domain' },
 );
+
+const fdist = await download(
+  'landfire-lf2024-fdist',
+  `https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_FDist_CONUS/ImageServer/exportImage?${bboxQ}&pixelType=S16&interpolation=RSP_NearestNeighbor`,
+  'fdist_lf2024.tif',
+  { agency: 'USGS / USFS LANDFIRE', title: 'LF2024 Fuel Disturbance (FDist): disturbance type, severity and age (1 / 2–5 / 6–10 yr)', resolution: '30 m native, nearest-neighbour resampled', usage: 'Public domain' },
+);
+// disturbance per cell: type (Fire/Mechanical/Insect…), severity, age class — from the FDist attribute CSV
+const fdCsv = (await fs.readFile(path.join(RAW, 'LF2024_FDist.csv'), 'utf8')).split('\n').slice(1);
+const fdInfo = new Map();
+for (const line of fdCsv) { const c = line.split(','); if (c.length > 4 && Number(c[0]) > 0) fdInfo.set(Number(c[0]), { type: c[1], severity: c[2], age: c[3] }); }
+const DIST = new Uint8Array(W * H); // 0 none, 1 fire ≤1y, 2 fire 2–5y, 3 fire 6–10y, 4 mech/harvest ≤5y, 5 mech 6–10y, 6 other
+for (let i = 0; i < W * H; i++) {
+  const d = fdInfo.get(fdist[i]);
+  if (!d) continue;
+  const recent = d.age === 'One Year', mid = d.age === 'Two to Five Years';
+  if (/Fire/i.test(d.type)) DIST[i] = recent ? 1 : mid ? 2 : 3;
+  else if (/Mechanical|Harvest|Clearcut|Thinning|Mastication/i.test(d.type)) DIST[i] = recent || mid ? 4 : 5;
+  else DIST[i] = 6;
+}
 
 // ---------- EVT lookup ----------
 const evtCsv = (await fs.readFile(path.join(RAW, 'LF2024_EVT.csv'), 'utf8')).split('\n').slice(1);
@@ -301,6 +322,19 @@ for (const f of fsRoads.features) {
   }
 }
 
+// ---------- walking network (roads + trails + highways) ----------
+const net = buildNetwork([
+  { fc: fsRoads, kind: 'road' },
+  { fc: trails, kind: 'trail' },
+  { fc: highways, kind: 'highway' },
+]);
+console.log('network nodes', net.nodes.length);
+const OFFTRAIL_FACTOR = 1.35; // off-trail walking vs. straight line (slope/brush); on-network distance is used as-is
+const accessNode = new Map(); // access id → nearest network node (within 60 m, else null)
+for (const a of accessPoints) accessNode.set(a.id, nearestNode(net, a.coord, 60)?.id ?? null);
+const dijkstraCache = new Map();
+const sssp = (node) => { if (!dijkstraCache.has(node)) dijkstraCache.set(node, dijkstra(net, node, 12000)); return dijkstraCache.get(node); };
+
 const al33 = highways.features.filter((f) => f.properties.ref === 'AL 33');
 function zoneFor(pt) {
   // Official 2026-27 permit map: Zone B lies east of AL 33, Zone A west. Divider digitized from OSM AL 33 centerline.
@@ -395,6 +429,7 @@ for (const r of raw) {
   // context within 300 m
   const counts = { saddle: 0, bench: 0, spur: 0, bottom: 0, draw: 0, steep: 0, stream: 0, ridge: 0 };
   const hab = [0, 0, 0, 0, 0, 0, 0];
+  const dist = [0, 0, 0, 0, 0, 0, 0];
   let oak = 0, total = 0, zmin = Infinity, zmax = -Infinity, slopeSum = 0, edges = 0;
   const aspects = [];
   const upCells = [], downCells = [];
@@ -409,6 +444,7 @@ for (const r of raw) {
     if (isStream[i]) counts.stream++;
     if (ridge[i]) counts.ridge++;
     hab[HAB[i]]++;
+    dist[DIST[i]]++;
     oak += oakMask[i];
     zmin = Math.min(zmin, z[i]); zmax = Math.max(zmax, z[i]);
     slopeSum += slope[i];
@@ -428,6 +464,7 @@ for (const r of raw) {
   const habitat = {
     hardwood: pct(hab[1]), conifer: pct(hab[2]), mixed: pct(hab[3]), earlySuccessional: pct(hab[4]), riparian: pct(hab[5]), developedAg: pct(hab[6]), oak: pct(oak), edgeDensity: edges / total,
   };
+  const disturbance = { fireRecent: pct(dist[1]), fireMid: pct(dist[2]), fireOld: pct(dist[3]), mechRecent: pct(dist[4]), mechOld: pct(dist[5]), other: pct(dist[6]) };
   const relief = zmax - zmin;
   const asp = circMean(aspects);
   const featureTypes = Object.entries({ saddle: counts.saddle >= 3, bench: counts.bench >= 6, spur: counts.spur >= 5, bottom: counts.bottom >= 10, draw: counts.draw >= 8 }).filter(([, v]) => v).map(([k]) => k);
@@ -441,26 +478,54 @@ for (const r of raw) {
   t += Math.min(0.08, habitat.edgeDensity * 0.6);
   if (habitat.earlySuccessional > 0.03 && habitat.earlySuccessional < 0.5) t += 0.05;
   if (distStream[r.cx + r.cy * W] > 40 && distStream[r.cx + r.cy * W] < 400) t += 0.03;
+  // Recent fire (2–5 yr) and recent mechanical treatment create browse and edge; 1-yr burns are bare and get less credit.
+  const distBonus = Math.min(0.08, disturbance.fireMid * 0.2 + disturbance.mechRecent * 0.2 + disturbance.fireRecent * 0.08 + disturbance.fireOld * 0.05);
+  t += distBonus;
   if (steepFrac > 0.35) t -= 0.1;
   if (habitat.developedAg > 0.4) t -= 0.15;
   const terrainScore = Math.round(Math.max(0, Math.min(1, t)) * 100);
 
   // access: nearest access points
   const ranked = accessPoints.map((a) => ({ a, d: turf.distance(pt, turf.point(a.coord), { units: 'meters' }) })).sort((p, q) => p.d - q.d).slice(0, 3);
-  const routes = ranked.map(({ a, d }) => {
-    // elevation gain along straight line (sampled each ~30 m), both directions
-    const steps = Math.max(2, Math.round(d / 30));
-    let gainIn = 0, gainOut = 0, prev = null, maxSlope = 0;
-    for (let s = 0; s <= steps; s++) {
-      const lo = a.coord[0] + ((lon - a.coord[0]) * s) / steps, la = a.coord[1] + ((lat - a.coord[1]) * s) / steps;
-      const xx = Math.min(W - 1, Math.max(0, xOf(lo))), yy = Math.min(H - 1, Math.max(0, yOf(la)));
+  const sampleProfile = (coords) => {
+    // elevation every ~30 m along a polyline; returns [[distM, elevM], …] (≤ 60 samples) plus gain in/out and max slope
+    const ls = turf.lineString(coords);
+    const len = turf.length(ls, { units: 'meters' });
+    const n = Math.max(2, Math.min(60, Math.round(len / 30)));
+    const prof = [];
+    let gainIn = 0, gainOut = 0, prevZ = null, maxSlope = 0;
+    for (let s = 0; s <= n; s++) {
+      const dist = (len * s) / n;
+      const p = turf.along(ls, dist, { units: 'meters' }).geometry.coordinates;
+      const xx = Math.min(W - 1, Math.max(0, xOf(p[0]))), yy = Math.min(H - 1, Math.max(0, yOf(p[1])));
       const v = z[idx(xx, yy)];
       maxSlope = Math.max(maxSlope, slope[idx(xx, yy)]);
-      if (prev != null) { if (v > prev) gainIn += v - prev; else gainOut += prev - v; }
-      prev = v;
+      if (prevZ != null) { if (v > prevZ) gainIn += v - prevZ; else gainOut += prevZ - v; }
+      prevZ = v;
+      prof.push([Math.round(dist), Math.round(v)]);
     }
-    return { accessPointId: a.id, name: a.name, kind: a.kind, coord: a.coord, verification: a.verified, straightLineMeters: Math.round(d), gainInMeters: Math.round(gainIn), gainOutMeters: Math.round(gainOut), maxSlopeDeg: Math.round(maxSlope), approachBearing: Math.round(turf.bearing(turf.point(a.coord), pt) + 360) % 360 };
-  });
+    return { len, prof, gainIn, gainOut, maxSlope };
+  };
+  const zoneNode = nearestNode(net, [lon, lat], 1500);
+  const routes = ranked.map(({ a, d }) => {
+    const an = accessNode.get(a.id);
+    let coords = null, onNetworkM = 0, offTrailM = 0, verifiedRoute = false;
+    if (an != null && zoneNode) {
+      const { dist, prev } = sssp(an);
+      if (Number.isFinite(dist[zoneNode.id]) && dist[zoneNode.id] < d * 2.5 + 400) {
+        coords = pathTo(net, prev, zoneNode.id);
+        onNetworkM = dist[zoneNode.id];
+        offTrailM = zoneNode.d;
+        verifiedRoute = true;
+        if (offTrailM > 5) coords = [...coords, [lon, lat]];
+      }
+    }
+    if (!coords) { coords = [a.coord, [lon, lat]]; offTrailM = d; }
+    const simp = turf.truncate(turf.simplify(turf.lineString(coords), { tolerance: 0.00003 }), { precision: 5 }).geometry.coordinates;
+    const { prof, gainIn, gainOut, maxSlope } = sampleProfile(coords);
+    const walkM = Math.max(Math.round(d), Math.round(onNetworkM + offTrailM * OFFTRAIL_FACTOR)); // never shorter than the straight line
+    return { accessPointId: a.id, name: a.name, kind: a.kind, coord: a.coord, verification: a.verified, straightLineMeters: Math.round(d), walkMeters: walkM, onNetworkMeters: Math.round(onNetworkM), offTrailMeters: Math.round(offTrailM), routeKind: verifiedRoute ? 'network+offtrail' : 'straight', path: simp, profile: prof, gainInMeters: Math.round(gainIn), gainOutMeters: Math.round(gainOut), maxSlopeDeg: Math.round(maxSlope), approachBearing: Math.round(turf.bearing(turf.point(coords[Math.max(0, coords.length - 2)]), pt) + 360) % 360 };
+  }).sort((p, q) => p.walkMeters - q.walkMeters).slice(0, 2);
 
   const zoneInfo = zoneFor(pt);
   const wilderness = inAny(pt, wild.features);
@@ -481,6 +546,7 @@ for (const r of raw) {
       tpiLocal: +tS[rep(r)].toFixed(2), tpiLandscape: +tL[rep(r)].toFixed(2), localReliefM: Math.round(relief), meanSlopeDeg: Math.round(slopeSum / total), steepFraction: +steepFrac.toFixed(2),
       distStreamM: Math.round(distStream[rep(r)]), distTrailM: Math.round(distTrail), distRoadM: Math.round(distRoad), nearbyFeatures: featureTypes,
       habitat: Object.fromEntries(Object.entries(habitat).map(([k, v]) => [k, +v.toFixed(3)])),
+      disturbance: Object.fromEntries(Object.entries(disturbance).map(([k, v]) => [k, +v.toFixed(3)])),
       beddingCoverBearing: beddingBearing ? Math.round(beddingBearing.mean) : null, beddingCoverConsistency: beddingBearing ? +beddingBearing.r.toFixed(2) : null,
       foodWaterBearing: foodWaterBearing ? Math.round(foodWaterBearing.mean) : null, foodWaterConsistency: foodWaterBearing ? +foodWaterBearing.r.toFixed(2) : null,
       zone: zoneInfo.zone, provisionalZone: zoneInfo.provisionalZone, distToZoneDivider: zoneInfo.distToDivider, wilderness, areaHa: +areaHa.toFixed(1), routes,
@@ -549,6 +615,14 @@ await fs.writeFile(path.join(OUT, 'streams.geojson'), JSON.stringify(streamsFc))
   await fs.writeFile(path.join(OUT, 'contours.geojson'), JSON.stringify(turf.simplify(turf.featureCollection(feats), { tolerance: 0.00012 })));
 }
 
+// ---------- disturbance PNG (LANDFIRE FDist) ----------
+{
+  const png = new PNG({ width: W, height: H });
+  const colors = { 1: [255, 120, 40, 190], 2: [255, 170, 60, 170], 3: [230, 200, 120, 130], 4: [120, 200, 255, 170], 5: [150, 190, 220, 120], 6: [200, 160, 220, 120] };
+  for (let i = 0; i < W * H; i++) png.data.set(colors[DIST[i]] ?? [0, 0, 0, 0], i * 4);
+  await fs.writeFile(path.join(OUT, 'disturbance.png'), PNG.sync.write(png));
+}
+
 // ---------- slope shading PNG ----------
 {
   const png = new PNG({ width: W, height: H });
@@ -569,7 +643,7 @@ const meta = {
   bbox: BBOX,
   grid: { width: W, height: H, cellDeg: DEG, approxCellM: [Math.round(dxAt(H / 2)), Math.round(DY)] },
   parameters: { tpiSmallRadiusCells: 5, tpiLargeRadiusCells: 25, streamThresholdKm2: STREAM_KM2, saddleHessianBaselineCells: K, dedupeMeters: 400, contextRadiusM: 300, recSiteSafetyBufferM: 400, zoneDividerUncertaintyM: 400 },
-  counts: { raw: raw.length, rejected, mergedDuplicates: merged, candidates: features.length, byType: Object.fromEntries(FEATURE_DEFS.map((d) => [d.type, features.filter((f) => f.properties.type === d.type).length])), accessPoints: accessPoints.length, streams: streamLines.length },
+  counts: { networkNodes: net.nodes.length, raw: raw.length, rejected, mergedDuplicates: merged, candidates: features.length, byType: Object.fromEntries(FEATURE_DEFS.map((d) => [d.type, features.filter((f) => f.properties.type === d.type).length])), accessPoints: accessPoints.length, streams: streamLines.length },
   sources,
 };
 await fs.writeFile(path.join(OUT, 'terrain-meta.json'), JSON.stringify(meta, null, 2));
