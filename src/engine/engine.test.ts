@@ -9,6 +9,7 @@ import { lookupJurisdiction, polygonContains, type Layers } from './geography';
 import { parseOpenMeteo, getWeather, dataAge } from './weather';
 import { evaluateCandidate, rankCandidates, WEIGHTS } from './scoring';
 import { rutPhase } from './rut';
+import { peakTimeline, solunarPeriods, movementAt } from './peak';
 
 const DATA = path.resolve(__dirname, '../../public/data');
 const read = (f: string) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
@@ -270,5 +271,43 @@ describe('scoring', () => {
     const r0 = evaluateCandidate(c, 'evening', { prefs, weather: null, pins: [] });
     const r1 = evaluateCandidate(c, 'evening', { prefs, weather: null, pins: [{ id: 'x', kind: 'rub', coord: c.properties.center, note: '', created: '' }] });
     expect(r1.components.find((k) => k.key === 'evidence')!.value).toBeGreaterThan(r0.components.find((k) => k.key === 'evidence')!.value);
+  });
+});
+
+// ---------------- Peak times ----------------
+describe('peak times', () => {
+  const prefs = { date: '2026-10-24', session: 'compare' as const, weapon: 'bow' as const, target: 'any' as const, maxWalkMeters: 4000, stand: 'climber' as const, effort: 'balanced' as const, youthHunter: false, start: null };
+  it('two major and up to two minor solunar periods per day', () => {
+    const s = solunarPeriods('2026-10-24', -87.36, 34.33);
+    expect(s.filter((x) => x.kind === 'major')).toHaveLength(2);
+    expect(s.filter((x) => x.kind === 'minor').length).toBeLessThanOrEqual(2);
+  });
+  it('movement peaks near dawn and dusk, low at midday outside the rut', () => {
+    const sun = sunDay('2026-10-24', -87.36, 34.33);
+    expect(movementAt(sun.sunrise, sun, '2026-10-24', 'any')).toBeGreaterThan(0.8);
+    expect(movementAt(sun.solarNoon, sun, '2026-10-24', 'any')).toBeLessThan(0.3);
+    expect(movementAt(sun.solarNoon, sun, '2026-11-25', 'mature_buck')).toBeGreaterThan(movementAt(sun.solarNoon, sun, '2026-10-24', 'mature_buck'));
+  });
+  it('without a forecast, peaks fall at dawn and dusk inside legal light', () => {
+    const c = candidates[0];
+    const t = peakTimeline(c, '2026-10-24', prefs, null);
+    expect(t.hasForecast).toBe(false);
+    expect(t.peaks).toHaveLength(2);
+    for (const w of t.peaks) {
+      expect(w.start).toBeGreaterThanOrEqual(t.sun.legalStart);
+      expect(w.end).toBeLessThanOrEqual(t.sun.legalEnd);
+      const nearDawn = Math.abs((w.start + w.end) / 2 - t.sun.sunrise) < 3 * 3600000;
+      const nearDusk = Math.abs((w.start + w.end) / 2 - t.sun.sunset) < 3 * 3600000;
+      expect(nearDawn || nearDusk).toBe(true);
+    }
+  });
+  it('an evening wind blowing toward bedding lowers the evening peak', () => {
+    const c = candidates.find((x) => x.properties.beddingCoverBearing != null && x.properties.beddingCoverConsistency! > 0.3)!;
+    const sun = sunDay('2026-10-24', c.properties.center[0], c.properties.center[1]);
+    const mk = (from: number) => ({ source: 'open-meteo' as const, model: 't', lat: 0, lon: 0, fetchedAt: Date.now(), fromCache: false, current: null, daily: [], hourly: Array.from({ length: 30 }, (_, i) => ({ time: sun.sunrise - 6 * 3600000 + i * 3600000, tempF: 55, feelsF: 55, humidity: 60, precipIn: 0, precipProb: 0, cloud: 20, pressureHpa: 1015, windMph: 8, windFrom: from, gustMph: 12, code: 0 })) });
+    const bad = peakTimeline(c, '2026-10-24', prefs, mk((c.properties.beddingCoverBearing! + 180) % 360));
+    const good = peakTimeline(c, '2026-10-24', prefs, mk((c.properties.beddingCoverBearing! + 90) % 360));
+    const pm = (t: ReturnType<typeof peakTimeline>) => Math.max(...t.hours.filter((h) => h.time > t.sun.solarNoon).map((h) => h.score));
+    expect(pm(good)).toBeGreaterThan(pm(bad));
   });
 });

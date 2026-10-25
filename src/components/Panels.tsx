@@ -9,6 +9,7 @@ import { scoreBand } from '../engine/scoring';
 import type { Jurisdiction } from '../engine/geography';
 import type { SourceRegistry } from '../data';
 import type { JournalEntry } from '../store';
+import type { PeakTimeline } from '../engine/peak';
 import { uid } from '../store';
 
 export const SESSION_LABEL: Record<Session, string> = { morning: 'Morning', midday: 'Midday', evening: 'Evening' };
@@ -222,7 +223,7 @@ export function RecCard({ rec, rank, onOpen, active }: { rec: HuntRecommendation
   );
 }
 
-export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void }) {
+export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap, timeline }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void; timeline?: PeakTimeline | null }) {
   const p = rec.candidate;
   const [open, setOpen] = useState<string | null>('why');
   const Sec = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => (
@@ -242,6 +243,7 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
       <p className="small">{rec.landJurisdiction} · {fmtDate(rec.huntDate, { weekday: 'short', month: 'short', day: 'numeric' })} · {SESSION_LABEL[rec.session]} {rec.recommendedWindow?.start}–{rec.recommendedWindow?.end} · {weaponLabel(rec.method)}</p>
       <div className="row tags"><LegalBadge status={rec.legalStatus} /><ConfidenceTag c={rec.confidence} /></div>
       <p className="small coords">📍 {p.center[1].toFixed(5)}, {p.center[0].toFixed(5)} · {p.areaHa} ha scouting zone · {Math.round(p.elevationM * 3.28)} ft</p>
+      {timeline && <PeakTimes t={timeline} />}
       <div className="row wrap">
         <button className="btn btn-primary" onClick={onNavigate}>Navigate to access</button>
         <button className="btn" onClick={onSave} disabled={saved}>{saved ? '★ Saved' : '☆ Save zone'}</button>
@@ -314,6 +316,54 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         <p className="tiny muted">Evidence: {rec.evidence.map((e) => `${e.sourceId} (${e.status})`).join(' · ')}</p>
       </Sec>
     </section>
+  );
+}
+
+// ---------------- Peak times (per-zone hourly timeline) ----------------
+export function PeakTimes({ t }: { t: PeakTimeline }) {
+  const [pick, setPick] = useState<number | null>(null);
+  if (!t.hours.length) return null;
+  const scores = t.hours.map((h) => h.score);
+  const lo = Math.min(...scores), hi = Math.max(...scores);
+  const inPeak = (time: number) => t.peaks.some((w) => time >= w.start - 1 && time < w.end);
+  const sel = pick != null ? t.hours[pick] : null;
+  const span = t.hours[t.hours.length - 1].time + 1800000 - t.hours[0].time;
+  const pos = (time: number) => `${Math.max(0, Math.min(100, ((time - t.hours[0].time) / span) * 100))}%`;
+  return (
+    <div className="peaktimes">
+      <div className="pt-head"><b>Peak times</b><span className="tiny muted">for this zone · {fmtDate(t.sun.date, { weekday: 'short', month: 'short', day: 'numeric' })}</span></div>
+      <div className="pt-windows">
+        {t.peaks.map((w, i) => (
+          <div key={w.start} className={`pt-win ${i === 0 ? 'best' : ''}`}>
+            <div className="pt-time">{i === 0 ? '★ ' : ''}{fmtTime(w.start)} – {fmtTime(w.end)}</div>
+            <div className="tiny muted">{w.why}</div>
+          </div>
+        ))}
+      </div>
+      <div className="pt-chart" role="list" aria-label="Half-hourly opportunity">
+        {t.hours.map((h, i) => {
+          const rel = hi === lo ? 0.6 : (h.score - lo) / (hi - lo);
+          return (
+            <button key={h.time} role="listitem" className={`pt-bar ${inPeak(h.time) ? 'peak' : ''} ${pick === i ? 'sel' : ''}`} style={{ height: `${18 + rel * 82}%` }} onClick={() => setPick(pick === i ? null : i)} aria-label={`${fmtTime(h.time)} rating ${h.score}`} />
+          );
+        })}
+        <i className="pt-mark" style={{ left: pos(t.sun.sunrise) }} title="Sunrise" />
+        <i className="pt-mark" style={{ left: pos(t.sun.sunset) }} title="Sunset" />
+      </div>
+      <div className="pt-sol" aria-label="Solunar periods">
+        {t.solunar.filter((s) => s.end > t.hours[0].time && s.start < t.sun.legalEnd).map((s) => (
+          <i key={s.label} className={`sol-${s.kind}`} style={{ left: pos(s.start), width: `calc(${pos(Math.min(s.end, t.sun.legalEnd))} - ${pos(Math.max(s.start, t.hours[0].time))})` }} title={s.label} />
+        ))}
+      </div>
+      <div className="pt-axis tiny muted"><span>{fmtTime(t.hours[0].time)}</span><span>☀ {fmtTime(t.sun.sunrise)}</span><span>noon</span><span>☀ {fmtTime(t.sun.sunset)}</span><span>{fmtTime(t.sun.legalEnd)}</span></div>
+      {sel ? (
+        <div className="pt-detail small"><b>{fmtTime(sel.time)}</b> · rating {sel.score} · {sel.windFrom != null ? `${compass(sel.windFrom)} ${Math.round(sel.windMph ?? 0)} mph` : 'no wind forecast'}{sel.tempF != null && ` · ${Math.round(sel.tempF)}°F`}{sel.notes.length > 0 && <div className="tiny muted">{sel.notes.join(' · ')}</div>}</div>
+      ) : (
+        <p className="tiny muted">Tap a bar for that half hour. Gold = peak window. Lower strip: <span className="sol-key major" /> major / <span className="sol-key minor" /> minor solunar (weighted lightly).</p>
+      )}
+      {!t.hasForecast && <p className="tiny warn">No wind forecast for this date yet — peaks reflect movement timing only.</p>}
+      <p className="tiny muted">Blends typical deer movement (dawn/dusk), this hour's wind for this zone, weather and solunar. Relative timing guide, not a prediction that deer will move.</p>
+    </div>
   );
 }
 

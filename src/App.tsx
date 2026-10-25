@@ -8,6 +8,7 @@ import { addDays, BANKHEAD_CENTER, fmtDate, localDate, sessionWindows, sunDay } 
 import { getAlerts, getWeather, hoursBetween } from './engine/weather';
 import { evaluateCandidate, rankCandidates, sessionsFor } from './engine/scoring';
 import { lookupJurisdiction } from './engine/geography';
+import { peakTimeline } from './engine/peak';
 import { evaluateLegal } from './engine/regulations';
 import { useJournal, usePersisted, usePins, type JournalEntry } from './store';
 
@@ -145,6 +146,11 @@ export default function App() {
     return Object.fromEntries((['morning', 'midday', 'evening'] as Session[]).map((s) => [s, evaluateCandidate(c, s, { prefs: { ...prefs, date: selectedKey.date }, weather, pins })]));
   }, [selectedKey, data, prefs, weather, pins]);
 
+  const timeline = useMemo(() => {
+    if (!selectedKey || !data) return null;
+    const c = data.candidates.find((x) => x.properties.id === selectedKey.id);
+    return c ? peakTimeline(c, selectedKey.date, prefs, weather) : null;
+  }, [selectedKey, data, prefs, weather]);
   const sun = useMemo(() => sunDay(prefs.date, wxPoint[0], wxPoint[1]), [prefs.date, wxKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const windHour = useMemo(() => {
     if (!selected) return null;
@@ -309,7 +315,7 @@ export default function App() {
               {inspect && jur && jurLegal && <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />}
               {selected ? (
                 <>
-                  <RecDetail rec={selected} compare={selectedCompare} onClose={() => setSelectedKey(null)} saved={saved}
+                  <RecDetail rec={selected} compare={selectedCompare} timeline={timeline} onClose={() => setSelectedKey(null)} saved={saved}
                     onSave={() => addPin({ kind: 'saved_candidate', coord: selected.center, note: `${selected.candidate.label}`, candidateId: selected.areaId })}
                     onNavigate={() => navigate(selected)}
                     onShowMap={() => { setSheet('peek'); fitZone(selected, 'peek'); }}
