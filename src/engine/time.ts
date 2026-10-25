@@ -44,6 +44,14 @@ export function fmtTime(t: number | null | undefined): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(new Date(t));
 }
 
+/** Compact range for tight layouts: "6:33–11:03 AM" when both ends share AM/PM, else "6:33 AM–6:33 PM". */
+export function fmtRange(a: number | null | undefined, b: number | null | undefined): string {
+  const fa = fmtTime(a), fb = fmtTime(b);
+  const ma = fa.slice(-2), mb = fb.slice(-2);
+  if (ma === mb && (ma === 'AM' || ma === 'PM')) return `${fa.slice(0, -3)}–${fb}`;
+  return `${fa}–${fb}`;
+}
+
 export function fmtDate(date: string, opts: Intl.DateTimeFormatOptions = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }): string {
   return new Intl.DateTimeFormat('en-US', { timeZone: TZ, ...opts }).format(new Date(chicagoTime(date, 12)));
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { HuntPreferences, HuntRecommendation, Session, UserPin, WeatherAlert, WeatherBundle } from '../engine/types';
-import { addDays, fmtDate, fmtTime, localDate, sessionWindows, sunDay, type SunDay } from '../engine/time';
+import { addDays, fmtDate, fmtRange, fmtTime, localDate, sessionWindows, sunDay, type SunDay } from '../engine/time';
 import { compass } from '../engine/wind';
 import { dataAge, hoursBetween, hpaToInHg, weatherText } from '../engine/weather';
 import { GOVERNING_LINKS, weaponLabel } from '../engine/regulations';
@@ -52,10 +52,12 @@ export function SettingsBar({ prefs, onOpen }: { prefs: HuntPreferences; onOpen:
   const dateLabel = prefs.date === today ? 'Today' : prefs.date === addDays(today, 1) ? 'Tomorrow' : fmtDate(prefs.date, { weekday: 'short', month: 'short', day: 'numeric' });
   return (
     <button className="settings-bar" onClick={onOpen} aria-label="Change hunt settings">
-      <span className="chip">{dateLabel}</span>
-      <span className="chip">{SESSION_SHORT[prefs.session]}</span>
-      <span className="chip">{weaponLabel(prefs.weapon).replace('Compound bow', 'Bow')}</span>
-      <span className="chip">≤ {mi(prefs.maxWalkMeters)}</span>
+      <span className="chips">
+        <span className="chip">{dateLabel}</span>
+        <span className="chip">{SESSION_SHORT[prefs.session]}</span>
+        <span className="chip">{weaponLabel(prefs.weapon).replace('Compound bow', 'Bow')}</span>
+        <span className="chip">≤ {mi(prefs.maxWalkMeters)}</span>
+      </span>
       <span className="chip chip-edit">Change ›</span>
     </button>
   );
@@ -154,7 +156,7 @@ export function TodayCard({ date, sun, weather, weatherError, alerts, alertsErro
           <div key={s} className={`rating ${best?.session === s ? 'best' : ''}`}>
             <div className="muted small">{SESSION_LABEL[s]}</div>
             <ScorePill score={ratings[s]?.score ?? null} legal={ratings[s]?.legalStatus} />
-            <div className="tiny muted">{fmtTime(wins[s].start)}–{fmtTime(wins[s].end)}</div>
+            <div className="tiny muted nowrap">{fmtRange(wins[s].start, wins[s].end)}</div>
           </div>
         ))}
       </div>
@@ -212,8 +214,8 @@ export function RecCard({ rec, rank, onOpen, active }: { rec: HuntRecommendation
     <button className={`rec ${active ? 'active' : ''}`} onClick={onOpen}>
       <div className="rec-rank">{rank}</div>
       <div className="rec-body">
-        <div className="rec-title">{p.label} <span className="muted">· {rec.areaId}</span></div>
-        <div className="small">{rec.landJurisdiction} · {SESSION_LABEL[rec.session]} {rec.recommendedWindow?.start}–{rec.recommendedWindow?.end}</div>
+        <div className="rec-title">{p.label} <span className="muted rec-id">{rec.areaId}</span></div>
+        <div className="small">{rec.landJurisdiction} · {SESSION_LABEL[rec.session]} <span className="nowrap">{rec.recommendedWindow?.start}–{rec.recommendedWindow?.end}</span></div>
         <div className="small muted">{rec.route ? `${mi(rec.route.distanceMeters)} est. walk from ${rec.route.name}` : 'No access route'} · wind risk {rec.windAssessment.risk}</div>
         <div className="row tags"><LegalBadge status={rec.legalStatus} /><ConfidenceTag c={rec.confidence} /></div>
         {rec.reasons[0] && <div className="small reason">{rec.reasons[0]}</div>}
@@ -239,7 +241,7 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         <button className="btn btn-ghost small" onClick={onClose}>← Back</button>
         <ScorePill score={rec.score} legal={rec.legalStatus} />
       </div>
-      <h2>{p.label} <span className="muted">{rec.areaId}</span></h2>
+      <h2>{p.label} <span className="muted rec-id">{rec.areaId}</span></h2>
       <p className="small">{rec.landJurisdiction} · {fmtDate(rec.huntDate, { weekday: 'short', month: 'short', day: 'numeric' })} · {SESSION_LABEL[rec.session]} {rec.recommendedWindow?.start}–{rec.recommendedWindow?.end} · {weaponLabel(rec.method)}</p>
       <div className="row tags"><LegalBadge status={rec.legalStatus} /><ConfidenceTag c={rec.confidence} /></div>
       <p className="small coords">📍 {p.center[1].toFixed(5)}, {p.center[0].toFixed(5)} · {p.areaHa} ha scouting zone · {Math.round(p.elevationM * 3.28)} ft</p>
@@ -335,7 +337,7 @@ export function PeakTimes({ t }: { t: PeakTimeline }) {
       <div className="pt-windows">
         {t.peaks.map((w, i) => (
           <div key={w.start} className={`pt-win ${i === 0 ? 'best' : ''}`}>
-            <div className="pt-time">{i === 0 ? '★ ' : ''}{fmtTime(w.start)} – {fmtTime(w.end)}</div>
+            <div className="pt-time">{i === 0 ? '★ ' : ''}{fmtRange(w.start, w.end)}</div>
             <div className="tiny muted">{w.why}</div>
           </div>
         ))}

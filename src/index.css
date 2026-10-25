@@ -146,10 +146,15 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
 
 
 /* ---- settings chip bar, peek strip, modal ---- */
-.settings-bar { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; color: var(--text); font: inherit; text-align: left; cursor: pointer; min-height: 48px; align-items: center; }
+.settings-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 10px; color: var(--text); font: inherit; text-align: left; cursor: pointer; min-height: 48px; align-items: center; }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; min-width: 0; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { white-space: nowrap; flex: none; }
+.nowrap { white-space: nowrap; }
+.rec-id { white-space: nowrap; font-weight: 500; }
 .settings-bar:hover { border-color: var(--accent); }
 .chip { background: var(--card-2); border-radius: 999px; padding: 5px 11px; font-size: .84rem; font-weight: 600; }
-.chip-edit { background: var(--accent); color: #1a1407; margin-left: auto; }
+.chip-edit { background: var(--accent); color: #1a1407; }
 .sheet-head { touch-action: none; user-select: none; -webkit-user-select: none; }
 .peek-wrap { display: none; }
 .peek { display: flex; gap: 10px; align-items: center; padding: 2px 14px 8px; }
@@ -168,7 +173,7 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
 .pt-windows { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
 .pt-win { background: var(--card-2); border-radius: 10px; padding: 8px 10px; border: 1px solid transparent; }
 .pt-win.best { border-color: var(--accent); }
-.pt-time { font-weight: 800; font-size: 1rem; }
+.pt-time { font-weight: 800; font-size: .95rem; white-space: nowrap; }
 .pt-chart { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 84px; padding-top: 4px; }
 .pt-bar { flex: 1; min-width: 4px; border: 0; padding: 0; border-radius: 3px 3px 0 0; background: #4d6253; cursor: pointer; min-height: 0; }
 .pt-bar.peak { background: var(--accent); }
@@ -225,4 +230,22 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
   .modal-backdrop { z-index: 30; }
   .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: 0; }
   .mobile-only { display: inline-block; }
+  .ratings, .compare { gap: 6px; }
+  .rating { padding: 8px 4px; }
+  .rating .pill { font-size: .95rem; padding: 3px 8px; }
+  .rating .tiny { font-size: .7rem; }
+  .pt-windows { gap: 6px; }
+  .pt-win { padding: 8px; }
+  .pt-time { font-size: .9rem; }
+  .grid2 { gap: 8px 10px; }
+  .card { padding: 12px; }
+  .detail h2 { font-size: 1.1rem; }
+  .rec { padding: 10px 8px 10px 10px; gap: 8px; }
+  .rec .tags { gap: 4px; margin: 4px 0; }
+  .rec .legal, .rec .conf { font-size: .68rem; padding: 2px 6px; }
+  .rec .reason { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .rec .pill { font-size: .95rem; padding: 3px 8px; }
+  .detail > .row.wrap .btn { flex: 1 1 45%; }
+  .detail > .row.wrap .btn-primary { flex-basis: 100%; }
+  .coords { font-size: .8rem; }
 }
