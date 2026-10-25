@@ -63,6 +63,13 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', h);
     return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
+  const runHunt = () => { setShowForm(false); setSelectedKey(null); switchTab('hunt'); if (recs[0]) flyTo(recs[0].center, 12.5); };
+  // Escape closes whichever overlay is open (also lets Android back-gesture users bail via keyboard on tablets).
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') { setShowForm(false); setShowInstallHelp(false); setShowLayers(false); } };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
   const onInstall = async () => {
     if (installEvt) { installEvt.prompt(); await installEvt.userChoice; setInstallEvt(null); }
     else setShowInstallHelp(true);
@@ -269,17 +276,21 @@ export default function App() {
         <button className="btn fab" onClick={() => setShowLayers(!showLayers)} aria-expanded={showLayers}>Layers</button>
         <button className="btn fab" onClick={onGps} aria-label="Locate me">◎</button>
         {showLayers && (
-          <div className="layers card">
-            <div className="seg small">{(['topo', 'satellite', 'hybrid', 'hillshade'] as BaseMap[]).map((b) => <button key={b} className={base === b ? 'on' : ''} onClick={() => setBase(b)}>{b}</button>)}</div>
-            {(Object.keys(DEFAULT_LAYERS) as (keyof LayerToggles)[]).map((k) => (
-              <label key={k} className="check small"><input type="checkbox" checked={layers[k]} onChange={(e) => setLayers({ ...layers, [k]: e.target.checked })} /> {LAYER_LABEL[k]}</label>
-            ))}
-            <div className="legend tiny">
-              <div><i style={{ background: '#5fbf5a' }} />High <i style={{ background: '#e0a43a' }} />Medium <i style={{ background: '#b0413e' }} />Low <i style={{ background: '#7a7a7a' }} />Not legal</div>
-              <div><i className="ln" style={{ background: '#f2b84b' }} />WMA <i className="ln" style={{ background: '#ffd84d' }} />Zone A|B (AL 33) <i style={{ background: '#d64545', opacity: 0.5 }} />Non-FS land</div>
-              <div><i className="ln" style={{ background: '#e36b5b' }} />NFS trail <i className="ln" style={{ background: '#f0e6d2' }} />FS road <i style={{ background: '#3fa7ff', borderRadius: 8 }} />Access</div>
+          <>
+            <div className="popover-backdrop" onClick={() => setShowLayers(false)} />
+            <div className="layers card" role="dialog" aria-label="Map layers">
+              <div className="seg small">{(['topo', 'satellite', 'hybrid', 'hillshade'] as BaseMap[]).map((b) => <button key={b} className={base === b ? 'on' : ''} onClick={() => setBase(b)}>{b}</button>)}</div>
+              {(Object.keys(DEFAULT_LAYERS) as (keyof LayerToggles)[]).map((k) => (
+                <label key={k} className="check small"><input type="checkbox" checked={layers[k]} onChange={(e) => setLayers({ ...layers, [k]: e.target.checked })} /> {LAYER_LABEL[k]}</label>
+              ))}
+              <div className="legend tiny">
+                <div><i style={{ background: '#5fbf5a' }} />High <i style={{ background: '#e0a43a' }} />Medium <i style={{ background: '#b0413e' }} />Low <i style={{ background: '#7a7a7a' }} />Not legal</div>
+                <div><i className="ln" style={{ background: '#f2b84b' }} />WMA <i className="ln" style={{ background: '#ffd84d' }} />Zone A|B (AL 33) <i style={{ background: '#d64545', opacity: 0.5 }} />Non-FS land</div>
+                <div><i className="ln" style={{ background: '#e36b5b' }} />NFS trail <i className="ln" style={{ background: '#f0e6d2' }} />FS road <i style={{ background: '#3fa7ff', borderRadius: 8 }} />Access</div>
+              </div>
+              <button className="btn btn-primary layers-done" onClick={() => setShowLayers(false)}>Done</button>
             </div>
-          </div>
+          </>
         )}
         {pickingStart && <div className="toast">Tap the map to set your starting point</div>}
       </div>
@@ -290,7 +301,7 @@ export default function App() {
         </div>
       )}
 
-      {isMobile && view === 'map' && (
+      {isMobile && view === 'map' && !showLayers && (
         <div className="map-card">
           {inspect && jur && jurLegal ? (
             <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />
@@ -317,9 +328,9 @@ export default function App() {
 
       {showInstallHelp && (
         <div className="modal-backdrop" onClick={() => setShowInstallHelp(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <section className="card">
-              <div className="card-head"><h2>Install on your phone</h2><button className="btn btn-ghost small" onClick={() => setShowInstallHelp(false)}>✕ Close</button></div>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Install on your phone" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head"><h2>Install on your phone</h2><button className="btn small" onClick={() => setShowInstallHelp(false)}>✕ Close</button></div>
+            <section className="card modal-body">
               {isIOS ? (
                 <ol className="small"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (square with an arrow).</li><li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>
               ) : (
@@ -327,15 +338,19 @@ export default function App() {
               )}
               <p className="tiny muted">Installed, it opens full-screen like an app and keeps map tiles you've viewed for use with weak signal.</p>
             </section>
+            <div className="modal-foot"><button className="btn btn-primary" onClick={() => setShowInstallHelp(false)}>Done</button></div>
           </div>
         </div>
       )}
 
       {showForm && (
         <div className="modal-backdrop" onClick={() => setShowForm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <HuntForm prefs={prefs} setPrefs={setPrefs} onGps={onGps} gpsStatus={gpsStatus} pickingStart={pickingStart} setPickingStart={(b) => { setPickingStart(b); if (b) { setShowForm(false); if (isMobile) switchTab('map'); } }} onClose={() => setShowForm(false)}
-              onRun={() => { setShowForm(false); setSelectedKey(null); switchTab('hunt'); if (recs[0]) flyTo(recs[0].center, 12.5); }} />
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Hunt settings" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head"><h2>Hunt settings</h2><button className="btn small" onClick={() => setShowForm(false)}>✕ Close</button></div>
+            <div className="modal-body">
+              <HuntForm prefs={prefs} setPrefs={setPrefs} onGps={onGps} gpsStatus={gpsStatus} pickingStart={pickingStart} setPickingStart={(b) => { setPickingStart(b); if (b) { setShowForm(false); if (isMobile) switchTab('map'); } }} onClose={() => setShowForm(false)} onRun={runHunt} />
+            </div>
+            <div className="modal-foot"><button className="btn btn-primary" onClick={runHunt}>Show my best hunts</button></div>
           </div>
         </div>
       )}
