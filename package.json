@@ -13,7 +13,8 @@
     "data:terrain": "node --max-old-space-size=4096 scripts/build-terrain.mjs",
     "data:registry": "node scripts/build-registry.mjs",
     "data": "npm run data:fetch && npm run data:terrain && npm run data:registry",
-    "deploy": "npm run build && firebase deploy --only hosting:bankhead --project rehtac-labs"
+    "deploy": "npm run build && firebase deploy --only hosting:bankhead --project rehtac-labs",
+    "og": "node scripts/make-og.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^6.15.0",
@@ -33,6 +34,7 @@
     "geotiff": "^3.0.5",
     "oxlint": "^1.88.0",
     "pngjs": "^7.0.0",
+    "sharp": "^0.35.5",
     "typescript": "~6.0.3",
     "vite": "^8.3.4",
     "vite-plugin-pwa": "^2.0.0",
