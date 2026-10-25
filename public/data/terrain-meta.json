@@ -1,0 +1,74 @@
+{
+  "algorithmVersion": "terrain-1.0.0",
+  "generated": "2026-10-25T03:17:03.349Z",
+  "bbox": [
+    -87.56,
+    34.2,
+    -87.2,
+    34.47
+  ],
+  "grid": {
+    "width": 1296,
+    "height": 972,
+    "cellDeg": 0.0002777777777777778,
+    "approxCellM": [
+      26,
+      31
+    ]
+  },
+  "parameters": {
+    "tpiSmallRadiusCells": 5,
+    "tpiLargeRadiusCells": 25,
+    "streamThresholdKm2": 0.3,
+    "saddleHessianBaselineCells": 3,
+    "dedupeMeters": 400,
+    "contextRadiusM": 300,
+    "recSiteSafetyBufferM": 400,
+    "zoneDividerUncertaintyM": 400
+  },
+  "counts": {
+    "raw": 1340,
+    "rejected": {
+      "outsideWma": 497,
+      "notFsOwned": 0,
+      "safetyBuffer": 4,
+      "tooLarge": 0
+    },
+    "mergedDuplicates": 389,
+    "candidates": 450,
+    "byType": {
+      "saddle": 72,
+      "bench": 92,
+      "spur": 250,
+      "bottom": 36
+    },
+    "accessPoints": 767,
+    "streams": 897
+  },
+  "sources": [
+    {
+      "id": "usgs-3dep-dem",
+      "agency": "USGS National Map",
+      "title": "3DEP Elevation (resampled to 1 arc-second ≈ 26×31 m)",
+      "resolution": "1 arc-second grid (~26 m E-W × 31 m N-S)",
+      "usage": "Public domain",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox=-87.56,34.2,-87.2,34.47&bboxSR=4326&imageSR=4326&size=1296,972&format=tiff&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation",
+      "retrieved": "2026-10-25T03:12:36.459Z",
+      "checksum": "e21caffaf916aaa8",
+      "quality": "retrieved",
+      "coverage": "bbox -87.56,34.2,-87.2,34.47"
+    },
+    {
+      "id": "landfire-lf2024-evt",
+      "agency": "USGS / USFS LANDFIRE",
+      "title": "LF2024 Existing Vegetation Type (EVT)",
+      "resolution": "30 m native, nearest-neighbour resampled. Not suitable for individual trees.",
+      "usage": "Public domain",
+      "url": "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_EVT_CONUS/ImageServer/exportImage?bbox=-87.56,34.2,-87.2,34.47&bboxSR=4326&imageSR=4326&size=1296,972&format=tiff&pixelType=S16&interpolation=RSP_NearestNeighbor",
+      "retrieved": "2026-10-25T03:12:37.745Z",
+      "checksum": "18359b024e958ca0",
+      "quality": "retrieved",
+      "coverage": "bbox -87.56,34.2,-87.2,34.47"
+    }
+  ]
+}

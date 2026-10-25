@@ -1,0 +1,10 @@
+node_modules
+dist
+dev-dist
+.firebase
+*.log
+.DS_Store
+# large regenerable research inputs (re-download with `npm run data`)
+research/raw/*.tif
+research/raw/*.pdf
+research/raw/*.geojson
