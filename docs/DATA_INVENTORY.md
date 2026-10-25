@@ -16,6 +16,10 @@
 | AL 33 centerline (Zone A/B divider) | OpenStreetMap via Overpass | Retrieved (ODbL) |
 | DEM, 1 arc-second (about 26×31 m) | USGS 3DEP ImageServer `exportImage` | Retrieved |
 | Existing Vegetation Type, 30 m | LANDFIRE LF2024 EVT ImageServer and EVT CSV | Retrieved |
+| Fuel disturbance (type, severity, age ≤10 yr), 30 m | LANDFIRE LF2024 FDist ImageServer and CSV | Retrieved. Shows burns on 126 candidate zones. |
+| Hazardous fuels treatment polygons | USFS FACTS `EDW_HazardousFuelsTreatments_01/15` | Retrieved, but only 5 FY2007 polygons in the bbox — Bankhead burn history is not published here. |
+| Walking network | Built from the FS road inventory, NFS trails and OSM highways | Derived: 13,432 nodes; 557 of 900 candidate routes follow it; the rest are labelled straight-line. |
+| 10-year temperature normals; past-day weather | Open-Meteo archive API (browser, live) | Live, cached 30 days |
 | Hourly/daily forecast | Open-Meteo (browser, live) | Live, with age shown |
 | Severe weather alerts | NWS API (browser, live) | Live |
 | Basemaps (topo, imagery, hybrid, shaded relief) | USGS The National Map tile services | Live, public domain |
@@ -31,4 +35,4 @@
 - **ADCNR rut map.** County-level peak dates were not machine-readable. Phase dates come from a secondary source (low confidence).
 - **Statewide rules on NF land outside the WMA** are not modeled. That land is marked "requires verification".
 - **Deer observations, density and harvest data.** None are used, and none are invented.
-- **Prescribed burns and timber management.** No current layer was ingested.
+- **Prescribed burns and timber management.** FACTS public data for this district is almost all invasive-species work; LANDFIRE FDist is used instead (30 m, age classes only, no exact dates).
