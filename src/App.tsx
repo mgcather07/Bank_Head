@@ -7,6 +7,9 @@ import { CompassView } from './components/Compass';
 import { cachedTileCount, downloadArea, removeArea, tilesFor, type SavedArea } from './engine/offline';
 import { downloadText, gpxToPins, makeBackup, mergeById, parseBackup, pinsToGpx } from './engine/backup';
 import { getNormals, getPastDay, type Normals } from './engine/climate';
+import { analyzeSpot, buildWalkNetwork, loadGrid, type WalkNetwork } from './engine/spot';
+import { buildHuntPlan } from './engine/plan';
+import type { Candidate } from './engine/types';
 import { TabBar, TabIcon } from './components/TabBar';
 import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, WeatherBundle } from './engine/types';
 import { addDays, BANKHEAD_CENTER, fmtDate, localDate, sessionWindows, sunDay } from './engine/time';
@@ -89,6 +92,10 @@ export default function App() {
   const [cachedTiles, setCachedTiles] = useState<number | null>(null);
   const [showCompass, setShowCompass] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [spots, setSpots] = useState<Candidate[]>([]);
+  const [checking, setChecking] = useState<string | null>(null);
+  const [pendingSpot, setPendingSpot] = useState<{ pt: [number, number]; date?: string; session?: Session } | null>(null);
+  const netRef = useRef<WalkNetwork | null>(null);
   const journal = useJournal();
   const mapRef = useRef<MLMap | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -98,6 +105,12 @@ export default function App() {
       setData(d);
       // ?zone=BH-..&date=YYYY-MM-DD&session=evening — shared link opens that zone
       const q = new URLSearchParams(window.location.search);
+      const spotQ = q.get('spot')?.split(',').map(Number);
+      if (spotQ && spotQ.length === 2 && spotQ.every(Number.isFinite)) {
+        const session = (['morning', 'midday', 'evening'].includes(q.get('session') ?? '') ? q.get('session') : undefined) as Session | undefined;
+        setPendingSpot({ pt: [spotQ[0], spotQ[1]], date: q.get('date') ?? undefined, session });
+        window.history.replaceState(null, '', window.location.pathname);
+      }
       const zone = q.get('zone');
       if (zone && d.candidates.some((c) => c.properties.id === zone)) {
         const date = q.get('date') && q.get('date')! >= localDate() ? q.get('date')! : localDate();
@@ -163,23 +176,37 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, prefs, weather, pins, normals]);
 
+  const findCand = useCallback((id: string) => data?.candidates.find((x) => x.properties.id === id) ?? spots.find((x) => x.properties.id === id) ?? null, [data, spots]);
   const selected = useMemo<HuntRecommendation | null>(() => {
     if (!selectedKey || !data) return null;
-    const c = data.candidates.find((x) => x.properties.id === selectedKey.id);
+    const c = findCand(selectedKey.id);
     return c ? evaluateCandidate(c, selectedKey.session, { prefs: { ...prefs, date: selectedKey.date }, weather, pins, normals }) : null;
-  }, [selectedKey, data, prefs, weather, pins, normals]);
+  }, [selectedKey, data, prefs, weather, pins, normals, findCand]);
   const selectedCompare = useMemo(() => {
     if (!selectedKey || !data) return {};
-    const c = data.candidates.find((x) => x.properties.id === selectedKey.id);
+    const c = findCand(selectedKey.id);
     if (!c) return {};
     return Object.fromEntries((['morning', 'midday', 'evening'] as Session[]).map((s) => [s, evaluateCandidate(c, s, { prefs: { ...prefs, date: selectedKey.date }, weather, pins, normals })]));
-  }, [selectedKey, data, prefs, weather, pins, normals]);
+  }, [selectedKey, data, prefs, weather, pins, normals, findCand]);
 
   const timeline = useMemo(() => {
     if (!selectedKey || !data) return null;
-    const c = data.candidates.find((x) => x.properties.id === selectedKey.id);
+    const c = findCand(selectedKey.id);
     return c ? peakTimeline(c, selectedKey.date, prefs, weather) : null;
-  }, [selectedKey, data, prefs, weather]);
+  }, [selectedKey, data, prefs, weather, findCand]);
+  // "Hunt this spot" plan with the best sessions for this zone over the next 7 days
+  const plan = useMemo(() => {
+    if (!selected || !selectedKey) return null;
+    const c = findCand(selectedKey.id);
+    if (!c) return null;
+    const today = localDate();
+    const upcoming = Array.from({ length: 7 }, (_, i) => addDays(today, i)).flatMap((date) => (['morning', 'evening'] as Session[]).map((session) => {
+      const r = evaluateCandidate(c, session, { prefs: { ...prefs, date }, weather, pins, normals });
+      return { date, session, score: r.legalStatus === 'verified_prohibited' ? null : r.score, windFrom: r.windAssessment.windFromDegrees, label: `${fmtDate(date, { weekday: 'short', month: 'numeric', day: 'numeric' })} ${session === 'morning' ? 'morning' : 'evening'}` };
+    }));
+    return buildHuntPlan(selected, timeline, upcoming);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, timeline]);
   const sun = useMemo(() => sunDay(prefs.date, wxPoint[0], wxPoint[1]), [prefs.date, wxKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const windHour = useMemo(() => {
     if (!selected) return null;
@@ -198,7 +225,7 @@ export default function App() {
       const ctx = { prefs: { ...prefs, date }, weather, pins, normals };
       const m = rankCandidates(data.candidates, { ...ctx, prefs: { ...ctx.prefs, session: 'morning' } }, 1);
       const e = rankCandidates(data.candidates, { ...ctx, prefs: { ...ctx.prefs, session: 'evening' } }, 1);
-      const sel = selectedKey ? data.candidates.find((c) => c.properties.id === selectedKey.id) : null;
+      const sel = selectedKey ? findCand(selectedKey.id) : null;
       const dw = weather?.daily.find((d) => d.date === date);
       return {
         date, sun: sunDay(date, wxPoint[0], wxPoint[1]), morning: m.recommendations[0] ?? null, evening: e.recommendations[0] ?? null,
@@ -267,6 +294,35 @@ export default function App() {
     return d?.summary ?? null;
   };
 
+  // ---- check this spot ----
+  const checkSpot = async (pt: [number, number], opts: { date?: string; session?: Session } = {}) => {
+    if (!data) return;
+    try {
+      setChecking('Loading terrain…');
+      const grid = await loadGrid();
+      if (!netRef.current) { setChecking('Building trail network…'); await new Promise((r) => setTimeout(r, 0)); netRef.current = buildWalkNetwork(data.fsRoads, data.trails, data.highways, data.recSites, data.checkStations); }
+      setChecking('Analyzing…');
+      await new Promise((r) => setTimeout(r, 0));
+      const res = analyzeSpot(grid, data, netRef.current, pt);
+      if ('error' in res) { setChecking(null); alert(res.error); return; }
+      setSpots((x) => [...x.slice(-9), res]);
+      const date = opts.date && opts.date >= localDate() ? opts.date : prefs.date;
+      const ctx = { prefs: { ...prefs, date }, weather, pins, normals };
+      const evals = (opts.session ? [opts.session] : (['morning', 'midday', 'evening'] as Session[])).map((s) => evaluateCandidate(res, s, ctx));
+      const best = evals.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
+      setChecking(null);
+      setInspect(null);
+      openRec(best);
+    } catch (e) {
+      console.error(e);
+      setChecking('error');
+    }
+  };
+  useEffect(() => {
+    if (pendingSpot && data) { const p = pendingSpot; setPendingSpot(null); checkSpot(p.pt, { date: p.date, session: p.session }); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSpot, data]);
+
   // ---- interactions ----
   // On phones the map fills the screen between the header and the tab bar; leave room for the floating card.
   const mapPadding = () => (window.innerWidth < 900 ? { bottom: 170, top: 70, left: 40, right: 40 } : { left: 480, top: 60, bottom: 60, right: 60 });
@@ -308,6 +364,7 @@ export default function App() {
       return;
     }
     setInspect(pt);
+    setChecking(null);
     setSelectedKey(null);
     if (!isMobile) setTab('hunt');
   };
@@ -393,7 +450,7 @@ export default function App() {
       {isMobile && view === 'map' && !showLayers && !showCompass && (
         <div className="map-card">
           {inspect && jur && jurLegal ? (
-            <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />
+            <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} onCheck={() => checkSpot(inspect)} checking={checking} />
           ) : selected ? (
             <div className="card mini">
               <div className="row">
@@ -455,10 +512,10 @@ export default function App() {
           {!data && !loadError && <div className="card">Loading verified geographic data…</div>}
           {view === 'hunt' && (
             <>
-              {!isMobile && inspect && jur && jurLegal && <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />}
+              {!isMobile && inspect && jur && jurLegal && <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} onCheck={() => checkSpot(inspect)} checking={checking} />}
               {selected ? (
                 <>
-                  <RecDetail rec={selected} compare={selectedCompare} timeline={timeline} onClose={() => setSelectedKey(null)} saved={saved}
+                  <RecDetail rec={selected} compare={selectedCompare} timeline={timeline} plan={plan} onPickSession={(s) => setSelectedKey((k) => (k ? { ...k, session: s } : k))} onClose={() => setSelectedKey(null)} saved={saved}
                     onSave={() => addPin({ kind: 'saved_candidate', coord: selected.center, note: `${selected.candidate.label}`, candidateId: selected.areaId })}
                     onNavigate={() => navigate(selected)}
                     onShowMap={() => showOnMap(selected)}

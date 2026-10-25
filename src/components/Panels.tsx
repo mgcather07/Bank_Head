@@ -11,6 +11,7 @@ import type { SourceRegistry } from '../data';
 import type { JournalEntry } from '../store';
 import type { PeakTimeline } from '../engine/peak';
 import type { SavedArea } from '../engine/offline';
+import type { HuntPlan } from '../engine/plan';
 import { uid } from '../store';
 
 export const SESSION_LABEL: Record<Session, string> = { morning: 'Morning', midday: 'Midday', evening: 'Evening' };
@@ -236,7 +237,8 @@ export function RecCard({ rec, rank, onOpen, active }: { rec: HuntRecommendation
 export function zoneUrl(rec: HuntRecommendation) {
   const u = new URL(window.location.href);
   u.search = '';
-  u.searchParams.set('zone', rec.areaId);
+  if (rec.candidate.type === 'spot') u.searchParams.set('spot', `${rec.center[0].toFixed(5)},${rec.center[1].toFixed(5)}`);
+  else u.searchParams.set('zone', rec.areaId);
   u.searchParams.set('date', rec.huntDate);
   u.searchParams.set('session', rec.session);
   return u.toString();
@@ -250,7 +252,7 @@ async function shareZone(rec: HuntRecommendation) {
   } catch { /* cancelled */ }
 }
 
-export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap, timeline }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void; timeline?: PeakTimeline | null }) {
+export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap, timeline, plan, onPickSession }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void; timeline?: PeakTimeline | null; plan?: HuntPlan | null; onPickSession?: (s: Session) => void }) {
   const p = rec.candidate;
   const [open, setOpen] = useState<string | null>('why');
   const Sec = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => (
@@ -270,7 +272,6 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
       <p className="small">{rec.landJurisdiction} · {fmtDate(rec.huntDate, { weekday: 'short', month: 'short', day: 'numeric' })} · {SESSION_LABEL[rec.session]} {rec.recommendedWindow?.start}–{rec.recommendedWindow?.end} · {weaponLabel(rec.method)}</p>
       <div className="row tags"><LegalBadge status={rec.legalStatus} /><ConfidenceTag c={rec.confidence} /></div>
       <p className="small coords">📍 {p.center[1].toFixed(5)}, {p.center[0].toFixed(5)} · {p.areaHa} ha scouting zone · {Math.round(p.elevationM * 3.28)} ft</p>
-      {timeline && <PeakTimes t={timeline} />}
       <div className="row wrap">
         <button className="btn btn-primary" onClick={onNavigate}>Navigate to access</button>
         <button className="btn" onClick={onSave} disabled={saved}>{saved ? '★ Saved' : '☆ Save zone'}</button>
@@ -279,11 +280,13 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         <button className="btn" onClick={() => shareZone(rec)}>⇪ Share</button>
       </div>
       <p className="tiny muted">This is a scouting zone, not a verified stand location or proof that deer are present.</p>
+      {plan && <PlanCard plan={plan} />}
+      {timeline && <PeakTimes t={timeline} />}
 
       {Object.keys(compare).length > 1 && (
         <div className="compare">
           {(Object.entries(compare) as [Session, HuntRecommendation][]).map(([s, r]) => (
-            <div key={s} className={`rating ${s === rec.session ? 'best' : ''}`}><div className="small muted">{SESSION_LABEL[s]}</div><ScorePill score={r.score} legal={r.legalStatus} /><div className="tiny muted">wind {r.windAssessment.risk}</div></div>
+            <button key={s} className={`rating ${s === rec.session ? 'best' : ''}`} onClick={() => onPickSession?.(s)} aria-pressed={s === rec.session}><div className="small muted">{SESSION_LABEL[s]}</div><ScorePill score={r.score} legal={r.legalStatus} /><div className="tiny muted">wind {r.windAssessment.risk}</div></button>
           ))}
         </div>
       )}
@@ -352,6 +355,25 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         <p className="tiny muted">Evidence: {rec.evidence.map((e) => `${e.sourceId} (${e.status})`).join(' · ')}</p>
       </Sec>
     </section>
+  );
+}
+
+// ---------------- Hunt this spot (plan) ----------------
+export function PlanCard({ plan }: { plan: HuntPlan }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className={`plan plan-${plan.verdict.tone}`}>
+      <button className="plan-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span><span className="tiny muted">HUNT THIS SPOT</span><b className="plan-verdict">{plan.verdict.label}</b></span><span>{open ? '−' : '+'}</span>
+      </button>
+      <p className="small plan-why">{plan.verdict.why}</p>
+      {open && plan.steps.map((st) => (
+        <div key={st.key} className={`plan-step ${st.tone ? `tone-${st.tone}` : ''}`}>
+          <div className="plan-title">{st.title}</div>
+          <ul>{st.lines.map((l) => <li key={l} className="small">{l}</li>)}</ul>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -515,7 +537,7 @@ export function Outlook({ days, compareId, onPick }: { days: OutlookDay[]; compa
 }
 
 // ---------------- Jurisdiction inspect ----------------
-export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart }: { pt: [number, number]; j: Jurisdiction; legalSummary: string; onClose: () => void; onAddPin: (kind: UserPin['kind']) => void; onSetStart: () => void }) {
+export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart, onCheck, checking }: { pt: [number, number]; j: Jurisdiction; legalSummary: string; onClose: () => void; onAddPin: (kind: UserPin['kind']) => void; onSetStart: () => void; onCheck?: () => void; checking?: string | null }) {
   const [kind, setKind] = useState<UserPin['kind']>('sighting');
   return (
     <section className="card inspect">
@@ -530,6 +552,12 @@ export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart
       </ul>
       <p className="small">{legalSummary}</p>
       {j.notes.map((n) => <p key={n} className="tiny muted">{n}</p>)}
+      {onCheck && (
+        <>
+          <button className="btn btn-primary check-btn" onClick={onCheck} disabled={!!checking && checking !== 'error'}>🎯 {checking && checking !== 'error' ? checking : 'Check this spot — rating & hunt plan'}</button>
+          {checking === 'error' && <p className="tiny warn">Couldn't analyze this spot — terrain data may not be downloaded yet. Try again with signal.</p>}
+        </>
+      )}
       <div className="row wrap">
         <select value={kind} onChange={(e) => setKind(e.target.value as UserPin['kind'])} aria-label="Pin type">
           {['stand', 'sighting', 'rub', 'scrape', 'trail', 'bedding', 'feeding', 'camera', 'parking', 'harvest'].map((k) => <option key={k} value={k}>{k}</option>)}

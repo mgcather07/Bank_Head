@@ -58,3 +58,16 @@ These bearings are hypotheses, not observations.
 High confidence is effectively reachable only with user-confirmed evidence.
 
 **The weights are uncalibrated product hypotheses.** Use the hunt journal (predicted score vs. outcome) to calibrate them before calling any score predictive.
+
+## Check this spot (in the browser)
+
+A tapped point is scored with the same terrain/habitat formula as the generated candidates, but on a half-resolution grid (2 arc-sec, about 52×62 m) exported by the build:
+- Continuous layers are 2×2 means; feature masks are 2×2 ORs so thin features such as saddles survive.
+- Feature-count thresholds are scaled to the larger cells (÷4) and edge density is halved to stay comparable.
+- The nearest saddle/bench/spur/bottom within 150 m sets the feature base score, reduced slightly with distance; with none nearby the base is 0.28.
+- A test re-checks every 15th generated zone and requires the median terrain-score difference to be ≤ 12 and the feature type to match for most of them.
+- Jurisdiction is looked up for the exact point, so spots on private or non-WMA land get the matching legal status.
+
+## Hunt this spot plan
+
+Built from the evaluation itself. **Huntable winds** are the 16 compass directions whose downwind bearing keeps exposure to the bedding side (weight 1) and food side (0.6–0.75) under 0.3. Walk time assumes 2.5 mph on roads/trails, 1.2 mph off-trail and 1 min per 10 m of climb.

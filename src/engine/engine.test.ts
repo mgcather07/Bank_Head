@@ -13,6 +13,9 @@ import { peakTimeline, solunarPeriods, movementAt } from './peak';
 import { tilesFor, lon2x, lat2y } from './offline';
 import { mergeById, parseBackup, pinsToGpx } from './backup';
 import { normalFor, type Normals } from './climate';
+import { analyzeSpot, buildWalkNetwork, parseGrid, routeToSpot, type TerrainGrid, type WalkNetwork } from './spot';
+import { buildHuntPlan, huntableWinds, walkMinutes } from './plan';
+import zlib from 'node:zlib';
 
 const DATA = path.resolve(__dirname, '../../public/data');
 const read = (f: string) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
@@ -390,5 +393,80 @@ describe('climate', () => {
     expect(normalFor(n, '2026-10-24')?.tMax).toBe(71);
     expect(normalFor(n, '2026-10-25')).toBeNull();
     expect(normalFor(null, '2026-10-24')).toBeNull();
+  });
+});
+
+// ---------------- Check this spot ----------------
+describe('check this spot', () => {
+  let grid: TerrainGrid;
+  let net: WalkNetwork;
+  beforeAll(() => {
+    const meta = read('terrain-grid.json');
+    const raw = zlib.gunzipSync(fs.readFileSync(path.join(DATA, 'terrain-grid.bin.gz')));
+    grid = parseGrid(meta, raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+    net = buildWalkNetwork(read('fs-roads.geojson'), read('trails.geojson'), read('highways.geojson'), read('rec-sites.geojson'), read('check-stations.geojson'));
+  });
+  it('grid has plausible Bankhead elevations', () => {
+    const els = Array.from(grid.elev.slice(0, 5000)).map((v) => v / 2);
+    expect(Math.min(...els)).toBeGreaterThan(80);
+    expect(Math.max(...els)).toBeLessThan(400);
+  });
+  it('re-checking a generated zone reproduces its feature and a similar terrain score', () => {
+    const diffs: number[] = [];
+    let sameType = 0;
+    const sample = candidates.filter((_, i) => i % 15 === 0);
+    for (const c of sample) {
+      const r = analyzeSpot(grid, layers, net, c.properties.center);
+      if ('error' in r) throw new Error(r.error);
+      diffs.push(Math.abs(r.properties.terrainScore - c.properties.terrainScore));
+      if (r.properties.label.toLowerCase().startsWith(c.properties.label.toLowerCase().slice(0, 8))) sameType++;
+    }
+    const median = diffs.sort((a, b) => a - b)[Math.floor(diffs.length / 2)];
+    expect(median).toBeLessThanOrEqual(12);
+    expect(sameType / sample.length).toBeGreaterThan(0.6);
+  });
+  it('a spot on private/non-FS land is never legal', () => {
+    const g = layers.wma.features[0].geometry;
+    const hole = (g.type === 'Polygon' ? [g.coordinates] : g.coordinates)[0][1];
+    const pt: [number, number] = [hole.reduce((a, p) => a + p[0], 0) / hole.length, hole.reduce((a, p) => a + p[1], 0) / hole.length];
+    const r = analyzeSpot(grid, layers, net, pt);
+    if ('error' in r) throw new Error(r.error);
+    expect(r.properties.jurisdiction).not.toBe('black_warrior_wma');
+    const prefs = { date: '2026-10-25', session: 'compare' as const, weapon: 'bow' as const, target: 'any' as const, maxWalkMeters: 4000, stand: 'climber' as const, effort: 'balanced' as const, youthHunter: false, start: null };
+    expect(evaluateCandidate(r, 'evening', { prefs, weather: null, pins: [] }).legalStatus).not.toBe('verified_allowed');
+  });
+  it('points outside the study area return an error, not a fake rating', () => {
+    expect('error' in analyzeSpot(grid, layers, net, [-86.5, 33.5])).toBe(true);
+  });
+  it('routes a spot from a drivable start along the network', () => {
+    const c = candidates.find((x) => x.properties.routes[0].routeKind === 'network+offtrail')!;
+    const r = routeToSpot(net, grid, c.properties.center)!;
+    expect(r.routeKind).toBe('network+offtrail');
+    expect(r.walkMeters).toBeGreaterThanOrEqual(r.straightLineMeters);
+    expect(r.path[r.path.length - 1][0]).toBeCloseTo(c.properties.center[0], 4);
+    expect(r.profile.length).toBeGreaterThan(1);
+  });
+});
+
+describe('hunt plan', () => {
+  it('huntable winds: scent must not blow toward bedding', () => {
+    const hw = huntableWinds({ beddingCoverBearing: 0, foodWaterBearing: null })!;
+    expect(hw.bad).toContain('S'); // wind from S pushes scent north into bedding
+    expect(hw.good).toContain('N');
+    expect(huntableWinds({ beddingCoverBearing: null, foodWaterBearing: null })).toBeNull();
+  });
+  it('walk time grows with distance and climb', () => {
+    expect(walkMinutes(1609, 0, 0)).toBeGreaterThan(20);
+    expect(walkMinutes(0, 300, 60)).toBeGreaterThan(walkMinutes(0, 300, 0));
+  });
+  it('builds a complete plan; prohibited dates say not to hunt', () => {
+    const prefs = { date: '2026-10-25', session: 'compare' as const, weapon: 'bow' as const, target: 'any' as const, maxWalkMeters: 4000, stand: 'climber' as const, effort: 'balanced' as const, youthHunter: false, start: null };
+    const rec = evaluateCandidate(candidates[0], 'evening', { prefs, weather: null, pins: [] });
+    const plan = buildHuntPlan(rec, peakTimeline(candidates[0], '2026-10-25', prefs, null));
+    expect(plan.steps.map((s) => s.key)).toEqual(expect.arrayContaining(['when', 'wind', 'setup', 'approach', 'legal', 'confirm']));
+    expect(plan.steps.find((s) => s.key === 'when')!.lines.join(' ')).toMatch(/legal light/);
+    const youth = evaluateCandidate(candidates[0], 'morning', { prefs: { ...prefs, date: '2026-10-31' }, weather: null, pins: [] });
+    expect(buildHuntPlan(youth, null).verdict.tone).toBe('bad');
+    expect(buildHuntPlan(youth, null).verdict.label).toMatch(/Don't hunt/);
   });
 });

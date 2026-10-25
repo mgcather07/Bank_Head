@@ -38,7 +38,8 @@ function terrainComponent(c: Candidate): ScoreComponent {
   const p = c.properties;
   const pos: string[] = [], neg: string[] = [];
   const featureText: Record<string, string> = { saddle: 'a ridge saddle', bench: 'a side-hill bench', spur: 'a spur/ridge point', bottom: 'a creek-bottom edge', draw: 'a draw' };
-  pos.push(`Derived ${featureText[p.type]} (${p.localReliefM} m local relief).`);
+  if (p.type === 'spot') (p.nearbyFeatures.length ? pos : neg).push(`Your spot is on a ${p.landform ?? 'slope'}${p.label.includes('m away') ? `; ${p.label.toLowerCase()}` : ''} (${p.localReliefM} m local relief).`);
+  else pos.push(`Derived ${featureText[p.type]} (${p.localReliefM} m local relief).`);
   const others = p.nearbyFeatures.filter((f) => f !== p.type);
   if (others.length) pos.push(`Terrain convergence: ${others.map((f) => featureText[f] ?? f).join(', ')} within ~300 m.`);
   if (p.habitat.oak > 0.15) pos.push(`Oak-type forest mapped on ${pct(p.habitat.oak)} of the area (mast potential — current acorn crop not verified).`);
@@ -174,7 +175,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   const date = prefs.date;
   const sun = sunDay(date, p.center[0], p.center[1]);
   const win = sessionWindows(sun)[session];
-  const legal = evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: p.zone, youthHunter: prefs.youthHunter });
+  const legal = evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: p.jurisdiction ?? 'black_warrior_wma', zone: p.zone, youthHunter: prefs.youthHunter });
   const route = chooseRoute(c, prefs);
   const hours = hoursBetween(ctx.weather, win.start, win.end);
   const wind = assessWind({ session, hours, sun, aspectDeg: p.aspectDeg, aspectStrength: p.aspectStrength, beddingBearing: p.beddingCoverBearing, foodBearing: p.foodWaterBearing, approachBearing: route?.approachBearing ?? null });
@@ -224,7 +225,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
     areaId: p.id,
     geometry: c.geometry,
     center: p.center,
-    landJurisdiction: `Black Warrior WMA${p.zone ? ` Zone ${p.zone}` : ''}${p.wilderness ? ' · Sipsey Wilderness' : ''}`,
+    landJurisdiction: p.jurisdiction && p.jurisdiction !== 'black_warrior_wma' ? (p.jurisdiction === 'nf_outside_wma' ? 'Bankhead NF (outside WMA)' : 'Private / non-public land') : `Black Warrior WMA${p.zone ? ` Zone ${p.zone}` : ''}${p.wilderness ? ' · Sipsey Wilderness' : ''}`,
     zoneId: p.zone ?? undefined,
     huntDate: date,
     session,

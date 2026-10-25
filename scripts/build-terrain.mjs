@@ -9,6 +9,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fromArrayBuffer } from 'geotiff';
 import { PNG } from 'pngjs';
+import zlib from 'node:zlib';
 import { contours as d3contours } from 'd3-contour';
 import * as turf from '@turf/turf';
 import { buildNetwork, nearestNode, dijkstra, pathTo } from './lib/network.mjs';
@@ -613,6 +614,44 @@ await fs.writeFile(path.join(OUT, 'streams.geojson'), JSON.stringify(streamsFc))
     }
   }
   await fs.writeFile(path.join(OUT, 'contours.geojson'), JSON.stringify(turf.simplify(turf.featureCollection(feats), { tolerance: 0.00012 })));
+}
+
+// ---------- compact terrain grid for in-browser "check this spot" ----------
+// Half resolution (2 arc-sec ≈ 52×62 m). Continuous values are 2×2 means; feature masks are 2×2 ORs so thin
+// features (saddles) survive. Layout per cell: elev u16 (0.5 m), slope u8 (0.25°), aspect u8 (2°), tpiL i8, tpiS i8 (σ×25),
+// distStream u8 (8 m), mask u8 (bits: saddle,bench,spur,bottom,draw,ridge,steep,stream), hab u8 (hab | oak<<3 | dist<<4).
+{
+  const W2 = W / 2, H2 = H / 2, N2 = W2 * H2;
+  const elev = new Uint16Array(N2), slp = new Uint8Array(N2), asp = new Uint8Array(N2), tl = new Int8Array(N2), ts = new Int8Array(N2), ds = new Uint8Array(N2), mask = new Uint8Array(N2), hb = new Uint8Array(N2);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+    const o = y * W2 + x;
+    const cells = [idx(2 * x, 2 * y), idx(2 * x + 1, 2 * y), idx(2 * x, 2 * y + 1), idx(2 * x + 1, 2 * y + 1)];
+    let ze = 0, sl = 0, l = 0, sm = 0, dmin = Infinity, m = 0, sx = 0, sy = 0;
+    const habCount = new Map();
+    let oakAny = 0, distBest = 0;
+    for (const i of cells) {
+      ze += z[i]; sl += slope[i]; l += tL[i]; sm += tS[i]; dmin = Math.min(dmin, distStream[i]);
+      sx += Math.sin((aspect[i] * Math.PI) / 180); sy += Math.cos((aspect[i] * Math.PI) / 180);
+      m |= (saddleMask[i] && 1) | (bench[i] && 2) | (spur[i] && 4) | (bottom[i] && 8) | (draw[i] && 16) | (ridge[i] && 32) | (steep[i] && 64) | (isStream[i] && 128);
+      habCount.set(HAB[i], (habCount.get(HAB[i]) ?? 0) + 1);
+      oakAny |= oakMask[i];
+      if (DIST[i] && (!distBest || DIST[i] < distBest)) distBest = DIST[i];
+    }
+    elev[o] = clamp(Math.round((ze / 4) * 2), 0, 65535);
+    slp[o] = clamp(Math.round((sl / 4) * 4), 0, 255);
+    asp[o] = Math.round(((((Math.atan2(sx, sy) * 180) / Math.PI) + 360) % 360) / 2) % 180;
+    tl[o] = clamp(Math.round((l / 4) * 25), -127, 127);
+    ts[o] = clamp(Math.round((sm / 4) * 25), -127, 127);
+    ds[o] = clamp(Math.round(dmin / 8), 0, 255);
+    mask[o] = m;
+    const hab = [...habCount.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    hb[o] = hab | (oakAny << 3) | (distBest << 4);
+  }
+  const body = Buffer.concat([elev, slp, asp, tl, ts, ds, mask, hb].map((a) => Buffer.from(a.buffer, a.byteOffset, a.byteLength)));
+  await fs.writeFile(path.join(OUT, 'terrain-grid.bin.gz'), zlib.gzipSync(body, { level: 9 }));
+  await fs.writeFile(path.join(OUT, 'terrain-grid.json'), JSON.stringify({ version: ALGORITHM_VERSION, bbox: BBOX, width: W2, height: H2, cellDeg: DEG * 2, layout: ['elev:u16/2', 'slope:u8/4', 'aspect:u8*2', 'tpiL:i8/25', 'tpiS:i8/25', 'distStream:u8*8', 'mask:u8', 'hab:u8'] }));
+  console.log('terrain grid', W2, 'x', H2, 'raw bytes', body.length);
 }
 
 // ---------- disturbance PNG (LANDFIRE FDist) ----------

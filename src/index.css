@@ -275,3 +275,21 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
   .compass-wrap { left: 8px; right: 8px; top: auto; width: auto; bottom: calc(66px + env(safe-area-inset-bottom)); max-height: 60vh; max-height: 60dvh; overflow-y: auto; }
   .compass-dial { max-width: 220px; }
 }
+
+/* ---- hunt plan / check spot ---- */
+.check-btn { width: 100%; margin: 6px 0 10px; }
+.plan { border-radius: 12px; padding: 12px; margin: 10px 0; background: #172019; border: 1px solid var(--line); border-left: 4px solid var(--amber); }
+.plan-good { border-left-color: var(--green); }
+.plan-bad { border-left-color: var(--red); }
+.plan-head { width: 100%; display: flex; justify-content: space-between; align-items: flex-start; background: none; border: 0; color: var(--text); padding: 0; text-align: left; font: inherit; cursor: pointer; min-height: 40px; }
+.plan-head > span:first-child { display: flex; flex-direction: column; gap: 2px; }
+.plan-verdict { font-size: 1.1rem; }
+.plan-why { margin: 4px 0 8px; color: #cfe3c6; }
+.plan-step { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.plan-title { font-weight: 700; font-size: .9rem; margin-bottom: 2px; }
+.plan-step ul { margin: 2px 0; padding-left: 1.05rem; }
+.plan-step li { margin: 3px 0; }
+.tone-good .plan-title { color: #9de39a; }
+.tone-warn .plan-title { color: #ffd36b; }
+.tone-bad .plan-title { color: #ffaaa5; }
+button.rating { color: var(--text); font: inherit; cursor: pointer; }

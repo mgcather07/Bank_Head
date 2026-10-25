@@ -22,7 +22,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,json,geojson}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,json,geojson,gz}'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: '/index.html',
         runtimeCaching: [

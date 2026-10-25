@@ -42,7 +42,7 @@ export interface RouteOption {
 
 export interface CandidateProps {
   id: string;
-  type: 'saddle' | 'bench' | 'spur' | 'bottom';
+  type: 'saddle' | 'bench' | 'spur' | 'bottom' | 'spot';
   label: string;
   terrainScore: number;
   center: [number, number];
@@ -81,6 +81,9 @@ export interface CandidateProps {
   wilderness: boolean;
   areaHa: number;
   routes: RouteOption[];
+  /** Set for user-checked spots; generated candidates are always inside the WMA on FS land. */
+  jurisdiction?: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown';
+  landform?: string;
 }
 
 export interface Candidate {

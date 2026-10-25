@@ -17,6 +17,8 @@ The site is entirely static. It has no Cloud Functions and no backend.
 | Offline map packs | Browser → USGS tiles into the service-worker cache | Up to 2,500 tiles per save (z11–15) |
 | Backup | Browser → .json / .gpx download and import | |
 | Compass | Browser DeviceOrientation | iOS asks for permission |
+| Check this spot | Browser (`src/engine/spot.ts`) + `public/data/terrain-grid.bin.gz` | Any tapped point scored with the build's terrain logic on a half-res (~52 m) grid; walk-in routed over FS roads/trails in the browser |
+| Hunt this spot plan | Browser (`src/engine/plan.ts`) | Verdict, timing/leave-by, huntable winds, setup, approach, legal, what to confirm, best upcoming sessions |
 | Climate normals / past weather | Browser → **Open-Meteo archive** API | |
 | Weather | Browser → **Open-Meteo** API | No key needed. Cached in localStorage. Data age is always shown and stale data is labelled. Refreshes every 30 min and on demand. |
 | Severe alerts | Browser → NWS `api.weather.gov/alerts` | |
@@ -37,7 +39,7 @@ Engine modules (`src/engine`):
 ```bash
 npm install
 npm run dev          # local dev server
-npm test             # 55 engine tests (jurisdiction, regulations, wind, time/DST, data failures, scoring)
+npm test             # 63 engine tests (jurisdiction, regulations, wind, time/DST, data failures, scoring)
 npm run data         # re-download sources + rebuild terrain candidates + registry
 npm run deploy       # build + firebase deploy --only hosting:bankhead --project rehtac-labs
 ```
