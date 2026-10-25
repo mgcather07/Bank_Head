@@ -143,23 +143,7 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
 .maplibregl-ctrl-attrib { background: rgba(0, 0, 0, .5) !important; color: #ccc; }
 .maplibregl-ctrl-attrib a { color: #ddd; }
 
-/* ---- mobile: map-centred with bottom sheet ---- */
-@media (max-width: 899px) {
-  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .map { grid-column: 1; grid-row: 2; }
-  .panel { position: fixed; left: 0; right: 0; bottom: 0; border-right: 0; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0; box-shadow: 0 -8px 24px rgba(0, 0, 0, .45); transition: height .25s ease; padding-bottom: env(safe-area-inset-bottom); }
-  .sheet-peek .panel { height: 118px; }
-  .sheet-peek .grab span { background: var(--accent); }
-  .sheet-half .panel { height: 52vh; }
-  .sheet-full .panel { height: calc(100% - 58px); }
-  .grab { display: flex; justify-content: center; background: none; border: 0; padding: 8px 0 2px; min-height: 26px; width: 100%; }
-  .grab span { width: 44px; height: 5px; border-radius: 3px; background: #5c6b60; }
-  .tabs { padding-top: 0; }
-  .map-tools { left: 10px; top: 62px; }
-  .wind-widget { top: 150px; right: 10px; }
-  .brand { font-size: .8rem; }
-  .sheet-half .wind-widget, .sheet-full .wind-widget { top: 150px; }
-}
+
 
 /* ---- settings chip bar, peek strip, modal ---- */
 .settings-bar { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; color: var(--text); font: inherit; text-align: left; cursor: pointer; min-height: 48px; align-items: center; }
@@ -176,15 +160,7 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
 .modal { width: 100%; max-width: 560px; max-height: 92vh; overflow-y: auto; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); background: var(--panel); border-radius: 18px 18px 0 0; border-top: 1px solid var(--line); -webkit-overflow-scrolling: touch; }
 .modal .card { margin-bottom: 0; }
 @media (min-width: 900px) { .modal-backdrop { align-items: center; } .modal { border-radius: 18px; } }
-@media (max-width: 899px) {
-  .grab { padding: 10px 0 4px; min-height: 24px; }
-  .peek-wrap { display: block; }
-  .sheet-half .peek-wrap, .sheet-full .peek-wrap { display: none; }
-  .sheet-peek .tabs, .sheet-peek .panel-body { display: none; }
-  .sheet-peek .panel { height: auto; min-height: 96px; }
-  .mobile-only { display: inline-block; }
-  .panel-body { padding-bottom: 60px; }
-}
+
 
 /* ---- peak times ---- */
 .peaktimes { background: #172019; border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 10px 0; }
@@ -207,3 +183,46 @@ input[type='checkbox'] { min-height: 0; width: 20px; height: 20px; accent-color:
 .sol-key.minor { background: #8fb7ff80; }
 .pt-axis { display: flex; justify-content: space-between; margin-top: 4px; }
 .pt-detail { margin-top: 8px; background: var(--card-2); border-radius: 8px; padding: 8px 10px; }
+
+/* ---- app shell: tab icons, page titles, install ---- */
+.tab-icon { vertical-align: -3px; }
+.page-title { display: none; }
+.tabbar { display: none; }
+.install-btn { margin-left: auto; }
+.install-card { border-color: var(--accent); }
+.map-card { display: none; }
+
+/* ---- phone: app-style shell with bottom tab bar and full-screen pages ---- */
+@media (max-width: 899px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .topbar { padding: 6px 12px; padding-top: max(6px, env(safe-area-inset-top)); min-height: 52px; }
+  .brand { font-size: .8rem; gap: 8px; }
+  .brand-name { display: none; }
+  .page-title { display: block; font-size: 1.05rem; letter-spacing: .02em; }
+  .map { grid-column: 1; grid-row: 2; }
+  .panel { grid-column: 1; grid-row: 2; position: relative; border: 0; z-index: 4; background: var(--bg); min-width: 0; }
+  .view-map .panel { display: none; }
+  .panel .tabs { display: none; }
+  .panel-body { padding: 12px 12px 24px; }
+  .map-tools { left: 10px; top: calc(62px + env(safe-area-inset-top)); }
+  .view-map .wind-widget { top: calc(150px + env(safe-area-inset-top)); right: 10px; }
+  .app:not(.view-map) .wind-widget, .app:not(.view-map) .map-tools { display: none; }
+  .tabbar { grid-row: 3; grid-column: 1; display: grid; grid-template-columns: repeat(5, 1fr); background: #0e1410; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); z-index: 6; }
+  .tabbar button { background: none; border: 0; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 6px; min-height: 58px; font-size: .7rem; font-weight: 600; letter-spacing: .02em; -webkit-tap-highlight-color: transparent; }
+  .tabbar button.on { color: var(--accent); }
+  .tabbar button.on .tb-icon { background: #d9a44122; }
+  .tb-icon { position: relative; display: grid; place-items: center; width: 48px; height: 30px; border-radius: 15px; }
+  .tb-dot { position: absolute; top: 3px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid #0e1410; }
+  .map-card { display: block; position: absolute; left: 8px; right: 8px; bottom: calc(66px + env(safe-area-inset-bottom)); z-index: 5; max-height: 46vh; overflow-y: auto; border-radius: 16px; box-shadow: 0 8px 26px rgba(0, 0, 0, .5); }
+  .map-card .card { margin: 0; }
+  .mini { padding: 12px; }
+  .mini-text { min-width: 0; font-size: .92rem; }
+  .mini-peak { color: var(--accent); margin: 6px 0 0 2px; font-weight: 600; }
+  .mini-actions { margin-top: 10px; }
+  .mini-actions .btn { flex: 1; }
+  .mini-summary { width: 100%; text-align: left; color: var(--text); font: inherit; cursor: pointer; padding: 10px 4px; }
+  .mini-summary .peek { padding: 0 8px; }
+  .modal-backdrop { z-index: 30; }
+  .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: 0; }
+  .mobile-only { display: inline-block; }
+}

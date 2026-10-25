@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MLMap } from 'maplibre-gl';
 import { loadData, type AppData } from './data';
 import { MapView, type BaseMap, type LayerToggles } from './components/MapView';
-import { HuntForm, InspectCard, JournalPanel, Outlook, PeekBar, RecCard, RecDetail, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
+import { HuntForm, InspectCard, JournalPanel, Outlook, PeekBar, RecCard, RecDetail, ScorePill, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
+import { TabBar, TabIcon } from './components/TabBar';
 import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, WeatherBundle } from './engine/types';
 import { addDays, BANKHEAD_CENTER, fmtDate, localDate, sessionWindows, sunDay } from './engine/time';
 import { getAlerts, getWeather, hoursBetween } from './engine/weather';
@@ -12,7 +13,10 @@ import { peakTimeline } from './engine/peak';
 import { evaluateLegal } from './engine/regulations';
 import { useJournal, usePersisted, usePins, type JournalEntry } from './store';
 
-type Tab = 'hunt' | 'outlook' | 'journal' | 'sources';
+type Tab = 'map' | 'hunt' | 'outlook' | 'journal' | 'sources';
+const PAGE_TITLE: Record<Tab, string> = { map: 'Map', hunt: 'Hunt', outlook: '7-Day Outlook', journal: 'Journal & Pins', sources: 'Info & Sources' };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type InstallPrompt = any;
 const BBOX = [-87.56, 34.2, -87.2, 34.47];
 const inStudyArea = (p: [number, number] | null) => !!p && p[0] > BBOX[0] && p[0] < BBOX[2] && p[1] > BBOX[1] && p[1] < BBOX[3];
 
@@ -38,37 +42,31 @@ export default function App() {
   const [userLoc, setUserLoc] = useState<[number, number] | null>(null);
   const [gpsStatus, setGpsStatus] = useState('');
   const [pickingStart, setPickingStart] = useState(false);
-  const [sheet, setSheet] = useState<'peek' | 'half' | 'full'>('half');
   const [showForm, setShowForm] = useState(false);
-  const panelEl = useRef<HTMLElement>(null);
-  const drag = useRef<{ y: number; h: number; moved: boolean } | null>(null);
-  // Bottom-sheet drag (phone): follow the finger, then snap to peek / half / full.
-  const snapHeights = () => ({ peek: 118, half: window.innerHeight * 0.52, full: window.innerHeight - 58 });
-  const onDragStart = (e: React.PointerEvent) => {
-    if (window.innerWidth >= 900 || !panelEl.current) return;
-    drag.current = { y: e.clientY, h: panelEl.current.offsetHeight, moved: false };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    panelEl.current.style.transition = 'none';
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 899px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 899px)');
+    const on = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  // Desktop always shows the map beside the panel, so the "map" tab only exists on phones.
+  const view: Tab = !isMobile && tab === 'map' ? 'hunt' : tab;
+  const switchTab = (t: Tab) => { setTab(t); setShowLayers(false); panelRef.current?.scrollTo({ top: 0 }); };
+  // Install-to-home-screen: Android/desktop Chrome fire beforeinstallprompt; iOS needs Share → Add to Home Screen.
+  const [installEvt, setInstallEvt] = useState<InstallPrompt>(null);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const standalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as unknown as { standalone?: boolean }).standalone === true);
+  const isIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  useEffect(() => {
+    const h = (e: Event) => { e.preventDefault(); setInstallEvt(e); };
+    window.addEventListener('beforeinstallprompt', h);
+    return () => window.removeEventListener('beforeinstallprompt', h);
+  }, []);
+  const onInstall = async () => {
+    if (installEvt) { installEvt.prompt(); await installEvt.userChoice; setInstallEvt(null); }
+    else setShowInstallHelp(true);
   };
-  const onDragMove = (e: React.PointerEvent) => {
-    if (!drag.current || !panelEl.current) return;
-    const dy = drag.current.y - e.clientY;
-    if (Math.abs(dy) > 6) drag.current.moved = true;
-    const s = snapHeights();
-    panelEl.current.style.height = `${Math.max(s.peek, Math.min(s.full, drag.current.h + dy))}px`;
-  };
-  const onDragEnd = () => {
-    if (!drag.current || !panelEl.current) return;
-    const h = panelEl.current.offsetHeight, s = snapHeights();
-    const moved = drag.current.moved;
-    drag.current = null;
-    panelEl.current.style.height = '';
-    panelEl.current.style.transition = '';
-    if (!moved) { setSheet(sheet === 'peek' ? 'half' : sheet === 'half' ? 'full' : 'peek'); return; }
-    const nearest = (['peek', 'half', 'full'] as const).reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
-    setSheet(nearest);
-  };
-  const switchTab = (t: Tab) => { setTab(t); if (sheet === 'peek') setSheet('half'); panelRef.current?.scrollTo({ top: 0 }); };
   const [windHourIdx, setWindHourIdx] = useState(0);
   const [showLayers, setShowLayers] = useState(false);
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -162,7 +160,7 @@ export default function App() {
 
   // ---- 7-day outlook ----
   const outlook = useMemo<OutlookDay[]>(() => {
-    if (!data || tab !== 'outlook') return [];
+    if (!data || view !== 'outlook') return [];
     const today = localDate();
     return Array.from({ length: 7 }, (_, i) => {
       const date = addDays(today, i);
@@ -179,36 +177,40 @@ export default function App() {
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, tab, prefs, weather, pins, selectedKey]);
+  }, [data, view, prefs, weather, pins, selectedKey]);
 
   // ---- interactions ----
-  const flyTo = (c: [number, number], zoom = 14.5) => mapRef.current?.flyTo({ center: c, zoom, padding: window.innerWidth < 900 ? { bottom: window.innerHeight * 0.45, top: 0, left: 0, right: 0 } : { left: 440, top: 0, bottom: 0, right: 0 } });
-  const mapPadding = (sheetState: 'peek' | 'half' | 'full' = sheet) => (window.innerWidth < 900 ? { bottom: (sheetState === 'peek' ? 120 : window.innerHeight * 0.52) + 40, top: 80, left: 40, right: 40 } : { left: 480, top: 60, bottom: 60, right: 60 });
+  // On phones the map fills the screen between the header and the tab bar; leave room for the floating card.
+  const mapPadding = () => (window.innerWidth < 900 ? { bottom: 170, top: 70, left: 40, right: 40 } : { left: 480, top: 60, bottom: 60, right: 60 });
+  const flyTo = (c: [number, number], zoom = 14.5) => mapRef.current?.flyTo({ center: c, zoom, padding: mapPadding() });
   // Zoom the map so the whole scouting polygon is in view (outlined), not just its centre.
-  const fitZone = (r: HuntRecommendation, sheetState?: 'peek' | 'half' | 'full') => {
+  const fitZone = (r: HuntRecommendation) => {
     const g = r.geometry;
     const rings = g.type === 'Polygon' ? g.coordinates : g.type === 'MultiPolygon' ? g.coordinates.flat() : [];
     const pts = rings.flat() as [number, number][];
     if (!pts.length) return flyTo(r.center);
     const lons = pts.map((p) => p[0]), lats = pts.map((p) => p[1]);
-    mapRef.current?.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: mapPadding(sheetState), maxZoom: 16, duration: 900 });
+    mapRef.current?.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: mapPadding(), maxZoom: 16, duration: 900 });
   };
   const openRec = (r: HuntRecommendation) => {
     setSelectedKey({ id: r.areaId, session: r.session, date: r.huntDate });
     setInspect(null);
     setWindHourIdx(0);
     setTab('hunt');
-    if (sheet === 'full') setSheet('half');
-    fitZone(r, sheet === 'peek' ? 'peek' : 'half');
+    fitZone(r);
     panelRef.current?.scrollTo({ top: 0 });
   };
+  /** Phone: jump to the Map tab with the zone outlined. */
+  const showOnMap = (r: HuntRecommendation) => { setSelectedKey({ id: r.areaId, session: r.session, date: r.huntDate }); setInspect(null); switchTab('map'); fitZone(r); };
   const onCandidate = (id: string) => {
     const c = data?.candidates.find((x) => x.properties.id === id);
     if (!c) return;
     // open the best of the requested sessions
     const evals = wanted.map((s) => evaluateCandidate(c, s, { prefs, weather, pins }));
-    openRec(evals.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0]);
-    if (sheet === 'peek') setSheet('half');
+    const best = evals.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
+    // On the phone map, keep the map in view and show a summary card instead of leaving the map.
+    if (isMobile && view === 'map') showOnMap(best);
+    else openRec(best);
   };
   const onInspect = (pt: [number, number]) => {
     if (pickingStart) {
@@ -219,8 +221,7 @@ export default function App() {
     }
     setInspect(pt);
     setSelectedKey(null);
-    setTab('hunt');
-    if (sheet === 'peek') setSheet('half');
+    if (!isMobile) setTab('hunt');
   };
   const onGps = () => {
     if (!navigator.geolocation) { setGpsStatus('GPS not available on this device.'); return; }
@@ -258,9 +259,10 @@ export default function App() {
   const ex = ranked?.excluded;
 
   return (
-    <div className={`app sheet-${sheet}`}>
+    <div className={`app view-${view}`}>
       <header className="topbar">
-        <div className="brand"><span className="logo">◭</span><div><b>BANKHEAD HUNT INTELLIGENCE</b><div className="tiny muted">{fmtDate(localDate())}{!online && ' · OFFLINE — cached data'}</div></div></div>
+        <div className="brand"><span className="logo">◭</span><div><b className="brand-name">BANKHEAD HUNT INTELLIGENCE</b><b className="page-title">{PAGE_TITLE[view]}</b><div className="tiny muted">{fmtDate(localDate())}{!online && ' · OFFLINE — cached data'}</div></div></div>
+        {!standalone && (installEvt || isIOS) && <button className="btn small install-btn" onClick={onInstall}>⤓ Install</button>}
       </header>
       <MapView data={data} base={base} layers={layers} scores={mapScores} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
       <div className="map-tools">
@@ -288,37 +290,74 @@ export default function App() {
         </div>
       )}
 
-      {showForm && (
-        <div className="modal-backdrop" onClick={() => setShowForm(false)}>
+      {isMobile && view === 'map' && (
+        <div className="map-card">
+          {inspect && jur && jurLegal ? (
+            <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />
+          ) : selected ? (
+            <div className="card mini">
+              <div className="row">
+                <ScorePill score={selected.score} legal={selected.legalStatus} />
+                <div className="grow mini-text"><b>{selected.candidate.label}</b> <span className="muted">{selected.areaId}</span><div className="tiny muted">{selected.landJurisdiction} · best {selected.session} · wind risk {selected.windAssessment.risk}</div></div>
+                <button className="btn btn-ghost small" aria-label="Clear selection" onClick={() => setSelectedKey(null)}>✕</button>
+              </div>
+              {timeline?.peaks[0] && <div className="tiny mini-peak">★ Peak {new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(timeline.peaks[0].start)}–{new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(timeline.peaks[0].end)}</div>}
+              <div className="row mini-actions">
+                <button className="btn btn-primary" onClick={() => { switchTab('hunt'); }}>Details</button>
+                <button className="btn" onClick={() => navigate(selected)}>Navigate</button>
+              </div>
+            </div>
+          ) : (
+            <button className="card mini mini-summary" onClick={() => switchTab('hunt')}>
+              <PeekBar ratings={ratings} selected={null} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {showInstallHelp && (
+        <div className="modal-backdrop" onClick={() => setShowInstallHelp(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <HuntForm prefs={prefs} setPrefs={setPrefs} onGps={onGps} gpsStatus={gpsStatus} pickingStart={pickingStart} setPickingStart={(b) => { setPickingStart(b); if (b) setShowForm(false); }} onClose={() => setShowForm(false)}
-              onRun={() => { setShowForm(false); setSelectedKey(null); setTab('hunt'); setSheet('half'); panelRef.current?.scrollTo({ top: 0 }); if (recs[0]) flyTo(recs[0].center, 12.5); }} />
+            <section className="card">
+              <div className="card-head"><h2>Install on your phone</h2><button className="btn btn-ghost small" onClick={() => setShowInstallHelp(false)}>✕ Close</button></div>
+              {isIOS ? (
+                <ol className="small"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (square with an arrow).</li><li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>
+              ) : (
+                <ol className="small"><li>Open the browser menu (⋮).</li><li>Choose <b>Install app</b> or <b>Add to Home screen</b>.</li></ol>
+              )}
+              <p className="tiny muted">Installed, it opens full-screen like an app and keeps map tiles you've viewed for use with weak signal.</p>
+            </section>
           </div>
         </div>
       )}
 
-      <aside className="panel" ref={panelEl}>
-        <div className="sheet-head" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
-          <div className="grab" aria-hidden="true"><span /></div>
-          <div className="peek-wrap"><PeekBar ratings={ratings} selected={selected} /></div>
+      {showForm && (
+        <div className="modal-backdrop" onClick={() => setShowForm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <HuntForm prefs={prefs} setPrefs={setPrefs} onGps={onGps} gpsStatus={gpsStatus} pickingStart={pickingStart} setPickingStart={(b) => { setPickingStart(b); if (b) { setShowForm(false); if (isMobile) switchTab('map'); } }} onClose={() => setShowForm(false)}
+              onRun={() => { setShowForm(false); setSelectedKey(null); switchTab('hunt'); if (recs[0]) flyTo(recs[0].center, 12.5); }} />
+          </div>
         </div>
+      )}
+
+      <aside className="panel">
         <nav className="tabs" role="tablist">
           {([['hunt', 'Hunt'], ['outlook', '7-Day'], ['journal', 'Journal'], ['sources', 'Sources']] as [Tab, string][]).map(([t, l]) => (
-            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => switchTab(t)}>{l}</button>
+            <button key={t} role="tab" aria-selected={view === t} className={view === t ? 'on' : ''} onClick={() => switchTab(t)}><TabIcon tab={t} /> {l}</button>
           ))}
         </nav>
         <div className="panel-body" ref={panelRef}>
           {loadError && <div className="card warn">Could not load map data: {loadError}</div>}
           {!data && !loadError && <div className="card">Loading verified geographic data…</div>}
-          {tab === 'hunt' && (
+          {view === 'hunt' && (
             <>
-              {inspect && jur && jurLegal && <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />}
+              {!isMobile && inspect && jur && jurLegal && <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} />}
               {selected ? (
                 <>
                   <RecDetail rec={selected} compare={selectedCompare} timeline={timeline} onClose={() => setSelectedKey(null)} saved={saved}
                     onSave={() => addPin({ kind: 'saved_candidate', coord: selected.center, note: `${selected.candidate.label}`, candidateId: selected.areaId })}
                     onNavigate={() => navigate(selected)}
-                    onShowMap={() => { setSheet('peek'); fitZone(selected, 'peek'); }}
+                    onShowMap={() => showOnMap(selected)}
                     onJournal={() => { setJournalDraft({ location: `${selected.areaId} ${selected.candidate.label}`, coord: selected.center, candidateId: selected.areaId, date: selected.huntDate, method: selected.method, predictedScore: selected.score }); switchTab('journal'); }} />
                   <button className="btn btn-ghost small" onClick={() => exportGpx(selected)}>Export GPX waypoints</button>
                 </>
@@ -338,12 +377,18 @@ export default function App() {
               {selected && <TodayCard date={selected.huntDate} sun={sunDay(selected.huntDate, selected.center[0], selected.center[1])} weather={weather} weatherError={weatherError} alerts={alerts} alertsError={alertsError} ratings={ratings} onRefresh={() => refreshWeather(true)} refreshing={refreshing} selected={selected} windHourIdx={windHourIdx} setWindHourIdx={setWindHourIdx} />}
             </>
           )}
-          {tab === 'outlook' && <Outlook days={outlook} compareId={selectedKey?.id ?? null} onPick={(date, r) => { setPrefs({ ...prefs, date }); openRec(r); }} />}
-          {tab === 'journal' && <JournalPanel key={journalDraft?.candidateId ?? 'j'} entries={journal.entries} onSave={journal.save} onDelete={journal.remove} pins={pins} onDeletePin={removePin} draft={journalDraft} onFly={(c) => flyTo(c, 15)} />}
-          {tab === 'sources' && <SourcesPanel registry={data?.registry ?? null} />}
+          {view === 'outlook' && <Outlook days={outlook} compareId={selectedKey?.id ?? null} onPick={(date, r) => { setPrefs({ ...prefs, date }); openRec(r); }} />}
+          {view === 'journal' && <JournalPanel key={journalDraft?.candidateId ?? 'j'} entries={journal.entries} onSave={journal.save} onDelete={journal.remove} pins={pins} onDeletePin={removePin} draft={journalDraft} onFly={(c) => { if (isMobile) switchTab('map'); flyTo(c, 15); }} />}
+          {view === 'sources' && (
+            <>
+              {!standalone && <section className="card install-card"><h2>Use it like an app</h2><p className="small">Add Bankhead Hunt to your home screen to open it full-screen and keep viewed map tiles for weak-signal areas.</p><button className="btn btn-primary" onClick={onInstall}>⤓ Install / Add to Home Screen</button></section>}
+              <SourcesPanel registry={data?.registry ?? null} />
+            </>
+          )}
           <p className="tiny muted foot">Decision support only. Scores are relative rankings, not probabilities. Always verify regulations, boundaries and access on site. © Rehtac Software LLC</p>
         </div>
       </aside>
+      <TabBar tab={view} onTab={switchTab} hasSelection={!!selected} />
     </div>
   );
 }

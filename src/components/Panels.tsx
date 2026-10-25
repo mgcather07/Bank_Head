@@ -76,7 +76,7 @@ export function PeekBar({ ratings, selected }: { ratings: Record<Session, HuntRe
   return (
     <div className="peek">
       <div className="peek-scores"><span className="tiny muted">AM</span><ScorePill score={m?.score ?? null} legal={m?.legalStatus} /><span className="tiny muted">PM</span><ScorePill score={e?.score ?? null} legal={e?.legalStatus} /></div>
-      <div className="peek-text"><b>{m || e ? `${best} favored` : 'No legal zones'}</b><div className="tiny muted">tap or drag up for top areas</div></div>
+      <div className="peek-text"><b>{m || e ? `${best} favored` : 'No legal zones'}</b><div className="tiny muted">tap for top areas</div></div>
     </div>
   );
 }
