@@ -44,8 +44,44 @@ export function WindArrow({ from, size = 44 }: { from: number | null; size?: num
   );
 }
 
+// ---------------- Settings chip bar (replaces scrolling to the form) ----------------
+const SESSION_SHORT: Record<HuntPreferences['session'], string> = { morning: 'Morning', evening: 'Evening', midday: 'Midday', all: 'All day', compare: 'AM vs PM' };
+export function SettingsBar({ prefs, onOpen }: { prefs: HuntPreferences; onOpen: () => void }) {
+  const today = localDate();
+  const dateLabel = prefs.date === today ? 'Today' : prefs.date === addDays(today, 1) ? 'Tomorrow' : fmtDate(prefs.date, { weekday: 'short', month: 'short', day: 'numeric' });
+  return (
+    <button className="settings-bar" onClick={onOpen} aria-label="Change hunt settings">
+      <span className="chip">{dateLabel}</span>
+      <span className="chip">{SESSION_SHORT[prefs.session]}</span>
+      <span className="chip">{weaponLabel(prefs.weapon).replace('Compound bow', 'Bow')}</span>
+      <span className="chip">≤ {mi(prefs.maxWalkMeters)}</span>
+      <span className="chip chip-edit">Change ›</span>
+    </button>
+  );
+}
+
+/** One-line summary shown when the sheet is collapsed to a strip. */
+export function PeekBar({ ratings, selected }: { ratings: Record<Session, HuntRecommendation | null>; selected: HuntRecommendation | null }) {
+  if (selected) {
+    return (
+      <div className="peek">
+        <ScorePill score={selected.score} legal={selected.legalStatus} />
+        <div className="peek-text"><b>{selected.candidate.label}</b> · {selected.areaId}<div className="tiny muted">{SESSION_LABEL[selected.session]} · wind risk {selected.windAssessment.risk} · tap to open</div></div>
+      </div>
+    );
+  }
+  const m = ratings.morning, e = ratings.evening;
+  const best = (m?.score ?? -1) >= (e?.score ?? -1) ? 'Morning' : 'Evening';
+  return (
+    <div className="peek">
+      <div className="peek-scores"><span className="tiny muted">AM</span><ScorePill score={m?.score ?? null} legal={m?.legalStatus} /><span className="tiny muted">PM</span><ScorePill score={e?.score ?? null} legal={e?.legalStatus} /></div>
+      <div className="peek-text"><b>{m || e ? `${best} favored` : 'No legal zones'}</b><div className="tiny muted">tap or drag up for top areas</div></div>
+    </div>
+  );
+}
+
 // ---------------- Hunt form ----------------
-export function HuntForm({ prefs, setPrefs, onGps, gpsStatus, pickingStart, setPickingStart, onRun }: { prefs: HuntPreferences; setPrefs: (p: HuntPreferences) => void; onGps: () => void; gpsStatus: string; pickingStart: boolean; setPickingStart: (b: boolean) => void; onRun: () => void }) {
+export function HuntForm({ prefs, setPrefs, onGps, gpsStatus, pickingStart, setPickingStart, onRun, onClose }: { prefs: HuntPreferences; setPrefs: (p: HuntPreferences) => void; onGps: () => void; gpsStatus: string; pickingStart: boolean; setPickingStart: (b: boolean) => void; onRun: () => void; onClose?: () => void }) {
   const today = localDate();
   const set = <K extends keyof HuntPreferences>(k: K, v: HuntPreferences[K]) => setPrefs({ ...prefs, [k]: v });
   const Seg = <T extends string>({ value, opts, on }: { value: T; opts: [T, string][]; on: (v: T) => void }) => (
@@ -58,7 +94,7 @@ export function HuntForm({ prefs, setPrefs, onGps, gpsStatus, pickingStart, setP
   const dateMode = prefs.date === today ? 'today' : prefs.date === addDays(today, 1) ? 'tomorrow' : 'custom';
   return (
     <section className="card form">
-      <h2>Find my best hunt</h2>
+      <div className="card-head"><h2>Hunt settings</h2>{onClose && <button className="btn btn-ghost small" onClick={onClose}>✕ Close</button>}</div>
       <label>Date</label>
       <div className="row">
         <Seg value={dateMode} opts={[['today', 'Today'], ['tomorrow', 'Tomorrow'], ['custom', 'Custom']]} on={(v) => set('date', v === 'today' ? today : v === 'tomorrow' ? addDays(today, 1) : prefs.date)} />
@@ -84,7 +120,7 @@ export function HuntForm({ prefs, setPrefs, onGps, gpsStatus, pickingStart, setP
       </div>
       <p className="muted small">{prefs.start ? `Start: ${prefs.start[1].toFixed(5)}, ${prefs.start[0].toFixed(5)}` : 'No start point — nearest access point is used.'} {gpsStatus}</p>
       <label className="check"><input type="checkbox" checked={prefs.youthHunter} onChange={(e) => set('youthHunter', e.target.checked)} /> Youth hunter (under 16, supervised)</label>
-      <button className="btn btn-primary big" onClick={onRun}>Find my best hunt</button>
+      <button className="btn btn-primary big" onClick={onRun}>Show my best hunts</button>
     </section>
   );
 }
@@ -186,7 +222,7 @@ export function RecCard({ rec, rank, onOpen, active }: { rec: HuntRecommendation
   );
 }
 
-export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void }) {
+export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void }) {
   const p = rec.candidate;
   const [open, setOpen] = useState<string | null>('why');
   const Sec = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => (
@@ -210,6 +246,7 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         <button className="btn btn-primary" onClick={onNavigate}>Navigate to access</button>
         <button className="btn" onClick={onSave} disabled={saved}>{saved ? '★ Saved' : '☆ Save zone'}</button>
         <button className="btn" onClick={onJournal}>Log hunt</button>
+        {onShowMap && <button className="btn mobile-only" onClick={onShowMap}>🗺 Show on map</button>}
       </div>
       <p className="tiny muted">This is a scouting zone, not a verified stand location or proof that deer are present.</p>
 

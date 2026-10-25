@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MLMap } from 'maplibre-gl';
 import { loadData, type AppData } from './data';
 import { MapView, type BaseMap, type LayerToggles } from './components/MapView';
-import { HuntForm, InspectCard, JournalPanel, Outlook, RecCard, RecDetail, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
+import { HuntForm, InspectCard, JournalPanel, Outlook, PeekBar, RecCard, RecDetail, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
 import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, WeatherBundle } from './engine/types';
 import { addDays, BANKHEAD_CENTER, fmtDate, localDate, sessionWindows, sunDay } from './engine/time';
 import { getAlerts, getWeather, hoursBetween } from './engine/weather';
@@ -38,6 +38,36 @@ export default function App() {
   const [gpsStatus, setGpsStatus] = useState('');
   const [pickingStart, setPickingStart] = useState(false);
   const [sheet, setSheet] = useState<'peek' | 'half' | 'full'>('half');
+  const [showForm, setShowForm] = useState(false);
+  const panelEl = useRef<HTMLElement>(null);
+  const drag = useRef<{ y: number; h: number; moved: boolean } | null>(null);
+  // Bottom-sheet drag (phone): follow the finger, then snap to peek / half / full.
+  const snapHeights = () => ({ peek: 118, half: window.innerHeight * 0.52, full: window.innerHeight - 58 });
+  const onDragStart = (e: React.PointerEvent) => {
+    if (window.innerWidth >= 900 || !panelEl.current) return;
+    drag.current = { y: e.clientY, h: panelEl.current.offsetHeight, moved: false };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    panelEl.current.style.transition = 'none';
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!drag.current || !panelEl.current) return;
+    const dy = drag.current.y - e.clientY;
+    if (Math.abs(dy) > 6) drag.current.moved = true;
+    const s = snapHeights();
+    panelEl.current.style.height = `${Math.max(s.peek, Math.min(s.full, drag.current.h + dy))}px`;
+  };
+  const onDragEnd = () => {
+    if (!drag.current || !panelEl.current) return;
+    const h = panelEl.current.offsetHeight, s = snapHeights();
+    const moved = drag.current.moved;
+    drag.current = null;
+    panelEl.current.style.height = '';
+    panelEl.current.style.transition = '';
+    if (!moved) { setSheet(sheet === 'peek' ? 'half' : sheet === 'half' ? 'full' : 'peek'); return; }
+    const nearest = (['peek', 'half', 'full'] as const).reduce((a, b) => (Math.abs(s[b] - h) < Math.abs(s[a] - h) ? b : a));
+    setSheet(nearest);
+  };
+  const switchTab = (t: Tab) => { setTab(t); if (sheet === 'peek') setSheet('half'); panelRef.current?.scrollTo({ top: 0 }); };
   const [windHourIdx, setWindHourIdx] = useState(0);
   const [showLayers, setShowLayers] = useState(false);
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -147,15 +177,15 @@ export default function App() {
 
   // ---- interactions ----
   const flyTo = (c: [number, number], zoom = 14.5) => mapRef.current?.flyTo({ center: c, zoom, padding: window.innerWidth < 900 ? { bottom: window.innerHeight * 0.45, top: 0, left: 0, right: 0 } : { left: 440, top: 0, bottom: 0, right: 0 } });
-  const mapPadding = () => (window.innerWidth < 900 ? { bottom: window.innerHeight * 0.52 + 40, top: 80, left: 40, right: 40 } : { left: 480, top: 60, bottom: 60, right: 60 });
+  const mapPadding = (sheetState: 'peek' | 'half' | 'full' = sheet) => (window.innerWidth < 900 ? { bottom: (sheetState === 'peek' ? 120 : window.innerHeight * 0.52) + 40, top: 80, left: 40, right: 40 } : { left: 480, top: 60, bottom: 60, right: 60 });
   // Zoom the map so the whole scouting polygon is in view (outlined), not just its centre.
-  const fitZone = (r: HuntRecommendation) => {
+  const fitZone = (r: HuntRecommendation, sheetState?: 'peek' | 'half' | 'full') => {
     const g = r.geometry;
     const rings = g.type === 'Polygon' ? g.coordinates : g.type === 'MultiPolygon' ? g.coordinates.flat() : [];
     const pts = rings.flat() as [number, number][];
     if (!pts.length) return flyTo(r.center);
     const lons = pts.map((p) => p[0]), lats = pts.map((p) => p[1]);
-    mapRef.current?.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: mapPadding(), maxZoom: 16, duration: 900 });
+    mapRef.current?.fitBounds([[Math.min(...lons), Math.min(...lats)], [Math.max(...lons), Math.max(...lats)]], { padding: mapPadding(sheetState), maxZoom: 16, duration: 900 });
   };
   const openRec = (r: HuntRecommendation) => {
     setSelectedKey({ id: r.areaId, session: r.session, date: r.huntDate });
@@ -163,7 +193,7 @@ export default function App() {
     setWindHourIdx(0);
     setTab('hunt');
     if (sheet === 'full') setSheet('half');
-    fitZone(r);
+    fitZone(r, sheet === 'peek' ? 'peek' : 'half');
     panelRef.current?.scrollTo({ top: 0 });
   };
   const onCandidate = (id: string) => {
@@ -178,6 +208,7 @@ export default function App() {
     if (pickingStart) {
       setPrefs({ ...prefs, start: pt });
       setPickingStart(false);
+      setShowForm(true);
       return;
     }
     setInspect(pt);
@@ -251,11 +282,23 @@ export default function App() {
         </div>
       )}
 
-      <aside className="panel">
-        <button className="grab" aria-label="Resize panel" onClick={() => setSheet(sheet === 'peek' ? 'half' : sheet === 'half' ? 'full' : 'peek')}><span /></button>
+      {showForm && (
+        <div className="modal-backdrop" onClick={() => setShowForm(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <HuntForm prefs={prefs} setPrefs={setPrefs} onGps={onGps} gpsStatus={gpsStatus} pickingStart={pickingStart} setPickingStart={(b) => { setPickingStart(b); if (b) setShowForm(false); }} onClose={() => setShowForm(false)}
+              onRun={() => { setShowForm(false); setSelectedKey(null); setTab('hunt'); setSheet('half'); panelRef.current?.scrollTo({ top: 0 }); if (recs[0]) flyTo(recs[0].center, 12.5); }} />
+          </div>
+        </div>
+      )}
+
+      <aside className="panel" ref={panelEl}>
+        <div className="sheet-head" onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
+          <div className="grab" aria-hidden="true"><span /></div>
+          <div className="peek-wrap"><PeekBar ratings={ratings} selected={selected} /></div>
+        </div>
         <nav className="tabs" role="tablist">
           {([['hunt', 'Hunt'], ['outlook', '7-Day'], ['journal', 'Journal'], ['sources', 'Sources']] as [Tab, string][]).map(([t, l]) => (
-            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => { setTab(t); if (sheet === 'peek') setSheet('half'); }}>{l}</button>
+            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'on' : ''} onClick={() => switchTab(t)}>{l}</button>
           ))}
         </nav>
         <div className="panel-body" ref={panelRef}>
@@ -269,11 +312,13 @@ export default function App() {
                   <RecDetail rec={selected} compare={selectedCompare} onClose={() => setSelectedKey(null)} saved={saved}
                     onSave={() => addPin({ kind: 'saved_candidate', coord: selected.center, note: `${selected.candidate.label}`, candidateId: selected.areaId })}
                     onNavigate={() => navigate(selected)}
-                    onJournal={() => { setJournalDraft({ location: `${selected.areaId} ${selected.candidate.label}`, coord: selected.center, candidateId: selected.areaId, date: selected.huntDate, method: selected.method, predictedScore: selected.score }); setTab('journal'); }} />
+                    onShowMap={() => { setSheet('peek'); fitZone(selected, 'peek'); }}
+                    onJournal={() => { setJournalDraft({ location: `${selected.areaId} ${selected.candidate.label}`, coord: selected.center, candidateId: selected.areaId, date: selected.huntDate, method: selected.method, predictedScore: selected.score }); switchTab('journal'); }} />
                   <button className="btn btn-ghost small" onClick={() => exportGpx(selected)}>Export GPX waypoints</button>
                 </>
               ) : (
                 <>
+                  <SettingsBar prefs={prefs} onOpen={() => setShowForm(true)} />
                   <TodayCard date={prefs.date} sun={sun} weather={weather} weatherError={weatherError} alerts={alerts} alertsError={alertsError} ratings={ratings} onRefresh={() => refreshWeather(true)} refreshing={refreshing} selected={null} windHourIdx={windHourIdx} setWindHourIdx={setWindHourIdx} />
                   <section className="card">
                     <h2>Top hunting areas</h2>
@@ -281,7 +326,7 @@ export default function App() {
                     {recs.length === 0 && data && <p className="warn small">No legally eligible zones match these settings. {evaluateLegal({ date: prefs.date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'A', youthHunter: prefs.youthHunter }).summary}</p>}
                     {recs.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} active={false} onOpen={() => openRec(r)} />)}
                   </section>
-                  <HuntForm prefs={prefs} setPrefs={setPrefs} onGps={onGps} gpsStatus={gpsStatus} pickingStart={pickingStart} setPickingStart={setPickingStart} onRun={() => { panelRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); if (recs[0]) flyTo(recs[0].center, 12.5); }} />
+                  <button className="btn big" onClick={() => setShowForm(true)}>Change date, weapon or session</button>
                 </>
               )}
               {selected && <TodayCard date={selected.huntDate} sun={sunDay(selected.huntDate, selected.center[0], selected.center[1])} weather={weather} weatherError={weatherError} alerts={alerts} alertsError={alertsError} ratings={ratings} onRefresh={() => refreshWeather(true)} refreshing={refreshing} selected={selected} windHourIdx={windHourIdx} setWindHourIdx={setWindHourIdx} />}
