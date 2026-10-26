@@ -356,6 +356,7 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
     areaHa: 3.1,
     routes: route ? [route] : [],
     jurisdiction: j.kind,
+    deerZone: j.kind === 'black_warrior_wma' ? 'D' : j.deerZone,
     landform,
   };
   return { geometry: circle(pt, 100), properties: props };

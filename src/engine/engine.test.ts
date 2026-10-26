@@ -5,7 +5,7 @@ import type { Candidate } from './types';
 import { evaluateLegal, ZONE_B_ANTLER_RULE, isCheckStationDay } from './regulations';
 import { angleDiff, assessWind, circularStats, downwindBearing, exposure, thermalAt } from './wind';
 import { addDays, chicagoTime, fmtTime, localDate, sessionWindows, sunDay, tzOffsetMinutes } from './time';
-import { lookupJurisdiction, polygonContains, type Layers } from './geography';
+import { deerZoneAt, lookupJurisdiction, polygonContains, type Layers } from './geography';
 import { parseOpenMeteo, getWeather, dataAge } from './weather';
 import { evaluateCandidate, rankCandidates, WEIGHTS } from './scoring';
 import { rutPhase } from './rut';
@@ -25,7 +25,7 @@ const read = (f: string) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8
 let layers: Layers;
 let candidates: Candidate[];
 beforeAll(() => {
-  layers = { wma: read('wma.geojson'), nfAdmin: read('nf-admin.geojson'), ownership: read('ownership.geojson'), wilderness: read('wilderness.geojson'), highways: read('highways.geojson') };
+  layers = { wma: read('wma.geojson'), nfAdmin: read('nf-admin.geojson'), ownership: read('ownership.geojson'), wilderness: read('wilderness.geojson'), highways: read('highways.geojson'), zoneD: read('deer-zone-d.geojson'), zoneDLines: read('deer-zone-boundary.geojson'), counties: read('counties.geojson') };
   candidates = read('candidates.geojson').features.map((f: Candidate) => ({ geometry: f.geometry, properties: f.properties }));
   setRoadIndex(buildRoadIndex(read('fs-roads.geojson'), read('highways.geojson'), read('roads-osm.geojson')));
 });
@@ -69,11 +69,19 @@ describe('jurisdiction', () => {
     expect(j.inWma).toBe(false);
     expect(j.kind).not.toBe('black_warrior_wma');
   });
-  it('every generated candidate lies inside the WMA on FS land', () => {
-    for (const c of candidates.slice(0, 120)) {
+  it('every generated candidate is on Forest Service land in the WMA or the National Forest, matching its tag', () => {
+    for (const c of candidates.filter((_, i) => i % 4 === 0)) {
       const j = lookupJurisdiction(layers, c.properties.center);
-      expect(j.kind).toBe('black_warrior_wma');
+      expect(['black_warrior_wma', 'nf_outside_wma']).toContain(j.kind);
+      expect(j.kind).toBe(c.properties.jurisdiction);
+      expect(j.fsOwned).toBe(true);
     }
+  });
+  it('the National Forest outside the WMA now has zones in both deer zones', () => {
+    const nf = candidates.filter((c) => c.properties.jurisdiction === 'nf_outside_wma');
+    expect(nf.length).toBeGreaterThan(100);
+    expect(nf.some((c) => c.properties.deerZone === 'D')).toBe(true);
+    expect(nf.some((c) => c.properties.deerZone === 'C')).toBe(true);
   });
 });
 
@@ -126,7 +134,8 @@ describe('regulations', () => {
     expect(q('2026-10-24', 'bow', null).status).toBe('verified_allowed');
   });
   it('NF land outside WMA requires verification; private is prohibited', () => {
-    expect(evaluateLegal({ date: '2026-10-24', weapon: 'bow', target: 'any', jurisdiction: 'nf_outside_wma', zone: null }).status).toBe('requires_verification');
+    // National Forest land off the WMA follows statewide seasons; on Oct 24 archery is open in both Zones C and D
+    expect(evaluateLegal({ date: '2026-10-24', weapon: 'bow', target: 'any', jurisdiction: 'nf_outside_wma', zone: null }).status).toBe('verified_allowed');
     expect(evaluateLegal({ date: '2026-10-24', weapon: 'bow', target: 'any', jurisdiction: 'private_or_unknown', zone: null }).status).toBe('verified_prohibited');
   });
   it('dates outside the loaded rule set require verification', () => {
@@ -258,8 +267,13 @@ describe('scoring', () => {
     const a = rankCandidates(candidates, { prefs, weather: null, pins: [] });
     const b = rankCandidates(candidates, { prefs, weather: null, pins: [] });
     expect(a.recommendations.map((r) => r.id)).toEqual(b.recommendations.map((r) => r.id));
+    // Oct 31 youth day: archery is closed on the WMA but open on National Forest land (statewide rules)
     const youth = rankCandidates(candidates, { prefs: { ...prefs, date: '2026-10-31' }, weather: null, pins: [] });
-    expect(youth.recommendations).toHaveLength(0);
+    expect(youth.recommendations.length).toBeGreaterThan(0);
+    for (const r of youth.recommendations) {
+      expect(r.candidate.jurisdiction).toBe('nf_outside_wma');
+      expect(r.legalStatus).toBe('verified_allowed');
+    }
   });
   it('no forecast → confidence reduced and wind unknown', () => {
     const r = evaluateCandidate(candidates[0], 'evening', { prefs, weather: null, pins: [] });
@@ -525,5 +539,45 @@ describe('roads', () => {
       }
     }
     expect(bad).toEqual([]);
+  });
+});
+
+// ---------------- Statewide seasons (National Forest outside the WMA) ----------------
+const sw = (date: string, weapon: 'bow' | 'crossbow' | 'rifle' | 'muzzleloader', deerZone: 'C' | 'D' | null, extra = {}) => evaluateLegal({ date, weapon, target: 'any', jurisdiction: 'nf_outside_wma', zone: null, deerZone, ...extra });
+describe('statewide seasons on National Forest land', () => {
+  it('Zone D archery opens Oct 1; Zone C archery opens Oct 15', () => {
+    expect(sw('2026-10-05', 'bow', 'D').status).toBe('verified_allowed');
+    expect(sw('2026-10-05', 'bow', 'C').status).toBe('verified_prohibited');
+    expect(sw('2026-10-15', 'bow', 'C').status).toBe('verified_allowed');
+  });
+  it('unlike the WMA, archery stays open on Zone D youth days', () => {
+    expect(sw('2026-10-31', 'bow', 'D').status).toBe('verified_allowed');
+    expect(sw('2026-10-31', 'rifle', 'D').status).toBe('verified_prohibited');
+    expect(sw('2026-10-31', 'rifle', 'D', { youthHunter: true }).status).toBe('verified_allowed');
+  });
+  it('Zone D gun: bucks only Nov 7–Dec 11, either sex Dec 12–Jan 1', () => {
+    expect(sw('2026-11-10', 'rifle', 'D').status).toBe('verified_allowed');
+    expect(evaluateLegal({ date: '2026-11-10', weapon: 'rifle', target: 'doe', jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'D' }).status).toBe('verified_prohibited');
+    expect(evaluateLegal({ date: '2026-12-20', weapon: 'rifle', target: 'doe', jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'D' }).status).toBe('verified_allowed');
+    expect(sw('2026-11-10', 'rifle', 'C').status).toBe('verified_prohibited'); // Zone C gun opens Nov 21
+  });
+  it('archery does with a bow during buck-only gun days are still legal (archery is either sex)', () => {
+    expect(evaluateLegal({ date: '2026-11-25', weapon: 'bow', target: 'doe', jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'C' }).status).toBe('verified_allowed');
+  });
+  it('Zone C season runs to Feb 10; Zone D ends Jan 27', () => {
+    expect(sw('2027-02-05', 'bow', 'C').status).toBe('verified_allowed');
+    expect(sw('2027-02-05', 'bow', 'D').status).toBe('verified_prohibited');
+  });
+  it('zone unknown: allowed only when C and D agree', () => {
+    expect(sw('2026-11-01', 'bow', null).status).toBe('verified_allowed');
+    expect(sw('2026-10-05', 'bow', null).status).toBe('requires_verification');
+  });
+  it('deer zone lookup matches reference towns; Zone C ruts later', () => {
+    expect(deerZoneAt(layers, [-87.4022, 34.1465]).deerZone).toBe('D'); // Double Springs
+    expect(deerZoneAt(layers, [-87.2581, 34.1415]).deerZone).toBe('D'); // Houston
+    expect(deerZoneAt(layers, [-87.12, 34.05]).deerZone).toBe('C'); // east of the Sipsey Fork / Smith Lake, Winston Co.
+    expect(deerZoneAt(layers, [-87.30, 33.97]).deerZone).toBe('C'); // Walker County, south of the county line
+    expect(rutPhase('2026-12-28', 'C').phase).toBe('rut');
+    expect(rutPhase('2026-12-28', 'D').phase).toBe('post_rut');
   });
 });

@@ -29,7 +29,9 @@ export interface LayerToggles {
 
 const USGS = (svc: string) => `https://basemap.nationalmap.gov/arcgis/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`;
 const BASES: Record<BaseMap, string> = { topo: 'USGSTopo', satellite: 'USGSImageryOnly', hybrid: 'USGSImageryTopo', hillshade: 'USGSShadedReliefOnly' };
-const SLOPE_BOUNDS: [[number, number], [number, number], [number, number], [number, number]] = [[-87.56, 34.47], [-87.2, 34.47], [-87.2, 34.2], [-87.56, 34.2]];
+import { STUDY_BBOX } from '../engine/config';
+const [B0, B1, B2, B3] = STUDY_BBOX;
+const SLOPE_BOUNDS: [[number, number], [number, number], [number, number], [number, number]] = [[B0, B3], [B2, B3], [B2, B1], [B0, B1]];
 
 const PIN_COLORS: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', saved_candidate: '#f7f2a1' };
 
@@ -65,6 +67,7 @@ export function scentCone(center: [number, number], downwind: number, lengthM = 
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 export type ZoneTypeFilter = 'all' | 'saddle' | 'bench' | 'spur' | 'bottom';
+export type LandFilter = 'all' | 'wma' | 'nf';
 export interface SetupMarker { id: string; coord: [number, number]; primary: boolean; label: string }
 
 /** Red ✕ with a white halo, drawn once into the map's sprite. */
@@ -96,13 +99,14 @@ interface Props {
   pins: UserPin[];
   setups: SetupMarker[];
   typeFilter: ZoneTypeFilter;
+  landFilter: LandFilter;
   startPin: [number, number] | null;
   onCandidate: (id: string) => void;
   onInspect: (lngLat: [number, number]) => void;
   mapRef: React.MutableRefObject<MLMap | null>;
 }
 
-export function MapView({ data, base, layers, scores, selected, windHour, userLoc, pins, setups, typeFilter, startPin, onCandidate, onInspect, mapRef }: Props) {
+export function MapView({ data, base, layers, scores, selected, windHour, userLoc, pins, setups, typeFilter, landFilter, startPin, onCandidate, onInspect, mapRef }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const ready = useRef(false);
   const pending = useRef<Array<() => void>>([]);
@@ -113,10 +117,12 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
   // init
   useEffect(() => {
     if (!el.current) return;
-    const map = new maplibregl.Map({ container: el.current, style: styleFor(base), center: BANKHEAD_CENTER, zoom: 10.6, maxZoom: 18, attributionControl: { compact: true } });
+    const map = new maplibregl.Map({ container: el.current, style: styleFor(base), center: BANKHEAD_CENTER, zoom: 9.9, maxZoom: 18, attributionControl: { compact: true } });
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
     mapRef.current = map;
+    if (import.meta.env.DEV) (window as unknown as { __bhMap?: MLMap }).__bhMap = map;
+    map.on('error', (e) => console.error('[map]', e.error?.message ?? e));
     map.on('click', (e: MapMouseEvent) => {
       const hits = map.queryRenderedFeatures(e.point, { layers: map.getLayer('cand-fill') ? ['cand-fill'] : [] });
       if (hits.length) cbs.current.onCandidate(String(hits[0].properties.id));
@@ -163,7 +169,10 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       map.addLayer({ id: 'wilderness', type: 'fill', source: 'wilderness', paint: { 'fill-color': '#7fbf6a', 'fill-opacity': 0.12 } });
       map.addLayer({ id: 'wilderness-line', type: 'line', source: 'wilderness', paint: { 'line-color': '#9fd98a', 'line-width': 1.5, 'line-dasharray': [3, 2] } });
       map.addSource('nf', { type: 'geojson', data: data.nfAdmin });
-      map.addLayer({ id: 'nf-line', type: 'line', source: 'nf', paint: { 'line-color': '#e0e0c8', 'line-width': 1, 'line-dasharray': [1, 2], 'line-opacity': 0.6 } });
+      map.addLayer({ id: 'nf-line', type: 'line', source: 'nf', paint: { 'line-color': '#9fe08a', 'line-width': 2, 'line-dasharray': [2, 1.5], 'line-opacity': 0.9 } });
+      map.addSource('zoned', { type: 'geojson', data: data.zoneDLines });
+      map.addLayer({ id: 'zoned-line', type: 'line', source: 'zoned', paint: { 'line-color': '#c38bff', 'line-width': 2, 'line-dasharray': [4, 3], 'line-opacity': 0.85 } });
+      map.addLayer({ id: 'zoned-label', type: 'symbol', source: 'zoned', minzoom: 10.5, layout: { 'symbol-placement': 'line', 'text-field': 'Deer Zone D | C', 'text-size': 11, 'text-font': ['Noto Sans Regular'], 'symbol-spacing': 400 }, paint: { 'text-color': '#e2c6ff', 'text-halo-color': '#1b231d', 'text-halo-width': 1.5 } });
       map.addSource('wma', { type: 'geojson', data: data.wma });
       map.addLayer({ id: 'wma-line', type: 'line', source: 'wma', paint: { 'line-color': '#f2b84b', 'line-width': 2.4 } });
       map.addSource('highways', { type: 'geojson', data: data.highways });
@@ -210,7 +219,7 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
     if (!map) return;
     const apply = () => {
       const vis = (ids: string[], on: boolean) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'));
-      vis(['wma-line', 'nf-line', 'zone-divider'], layers.boundaries);
+      vis(['wma-line', 'nf-line', 'zone-divider', 'zoned-line', 'zoned-label'], layers.boundaries);
       vis(['nonfs'], layers.ownership);
       vis(['wilderness', 'wilderness-line'], layers.wilderness);
       vis(['fsroads'], layers.roads);
@@ -231,7 +240,7 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
     const map = mapRef.current;
     if (!map || !data) return;
     const apply = () => {
-      const fc = { type: 'FeatureCollection', features: data.candidatesFc.features.map((f) => ({ ...f, properties: { id: f.properties.id, type: f.properties.type, score: scores.has(f.properties.id) ? scores.get(f.properties.id) ?? -1 : -1 } })) };
+      const fc = { type: 'FeatureCollection', features: data.candidatesFc.features.map((f) => ({ ...f, properties: { id: f.properties.id, type: f.properties.type, land: f.properties.jurisdiction === 'nf_outside_wma' ? 'nf' : 'wma', score: scores.has(f.properties.id) ? scores.get(f.properties.id) ?? -1 : -1 } })) };
       (map.getSource('cands') as GeoJSONSource | undefined)?.setData(fc as FeatureCollection);
     };
     whenReady(apply);
@@ -251,12 +260,15 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      const f = typeFilter === 'all' ? null : (['==', ['get', 'type'], typeFilter] as maplibregl.FilterSpecification);
+      const parts: unknown[] = [];
+      if (typeFilter !== 'all') parts.push(['==', ['get', 'type'], typeFilter]);
+      if (landFilter !== 'all') parts.push(['==', ['get', 'land'], landFilter]);
+      const f = parts.length ? (['all', ...parts] as maplibregl.FilterSpecification) : null;
       for (const id of ['cand-fill', 'cand-line']) if (map.getLayer(id)) map.setFilter(id, f);
     };
     whenReady(apply);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilter, data, mapRef]);
+  }, [typeFilter, landFilter, data, mapRef]);
 
   // selection, cone, route
   useEffect(() => {

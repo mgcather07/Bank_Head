@@ -1,4 +1,6 @@
-# Verified Data Inventory (audited 2026-10-24)
+# Verified Data Inventory (audited 2026-10-24; study area expanded to all of Bankhead National Forest 2026-10-25)
+
+Study area: −87.66…−87.08, 33.96…34.50 (`scripts/config.mjs`), covering the whole William B. Bankhead National Forest. Zones are generated on Black Warrior WMA land and on Forest Service-owned land inside the National Forest boundary.
 
 ## Obtained and in production
 
@@ -14,7 +16,9 @@
 | Recreation sites (trailhead, hunt camp, etc.) | USFS `EDW_InfraRecreationSites_01` | Retrieved |
 | WMA checking station | ADCNR `CheckingStations/MapServer/0` | Retrieved |
 | AL 33 centerline (Zone A/B divider) | OpenStreetMap via Overpass | Retrieved (ODbL) |
-| All motor roads and tracks (982 ways) | OpenStreetMap via Overpass (`scripts/fetch-osm-roads.mjs`) | Retrieved (ODbL). Used only to keep zones and setup points off roads, not for routing or parking. |
+| Deer Zone C/D line | Derived from the OutdoorAlabama 2026-27 Zone D boundary description + OSM roads/Sipsey Fork + ADCNR counties (`scripts/build-deer-zones.mjs`) | Derived and validated against reference towns. Points within 400 m of the line are treated as zone-uncertain. |
+| Statewide 2026-27 deer seasons (public land, Zones C and D) | OutdoorAlabama.com deer-season page | Transcribed into `src/engine/regulations.ts`. The page's zone map image is labelled "Proposed". |
+| All motor roads and tracks | OpenStreetMap via Overpass (`scripts/fetch-osm-roads.mjs`) | Retrieved (ODbL). Used only to keep zones and setup points off roads, not for routing or parking. |
 | DEM, 1 arc-second (about 26×31 m) | USGS 3DEP ImageServer `exportImage` | Retrieved |
 | Existing Vegetation Type, 30 m | LANDFIRE LF2024 EVT ImageServer and EVT CSV | Retrieved |
 | Fuel disturbance (type, severity, age ≤10 yr), 30 m | LANDFIRE LF2024 FDist ImageServer and CSV | Retrieved. Shows burns on 126 candidate zones. |
@@ -34,6 +38,6 @@
   - the checking station
   - points every 400 m along FS roads with maintenance level ≥ 2 that are open to ALL (labelled "legal pull-off not verified")
 - **ADCNR rut map.** County-level peak dates were not machine-readable. Phase dates come from a secondary source (low confidence).
-- **Statewide rules on NF land outside the WMA** are not modeled. That land is marked "requires verification".
+- **ADCNR publishes no deer-zone GIS.** Zone D was rebuilt from the official text and is labelled as derived.
 - **Deer observations, density and harvest data.** None are used, and none are invented.
 - **Prescribed burns and timber management.** FACTS public data for this district is almost all invasive-species work; LANDFIRE FDist is used instead (30 m, age classes only, no exact dates).

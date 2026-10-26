@@ -550,6 +550,7 @@ export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart
         <li>NF administrative boundary: {j.inNfAdmin ? 'inside' : 'outside'}</li>
         <li>Zone: <b>{j.zone ?? (j.provisionalZone ? `${j.provisionalZone}? (unconfirmed)` : '—')}</b>{j.distToDividerM != null && ` · ${j.distToDividerM} m from AL 33`}</li>
         <li>Sipsey Wilderness: {j.wilderness ? 'yes' : 'no'}</li>
+        <li>Statewide deer zone: <b>{j.deerZone ?? 'uncertain (near C/D line)'}</b>{j.kind === 'black_warrior_wma' ? ' (WMA calendar applies)' : ''}</li>
       </ul>
       <p className="small">{legalSummary}</p>
       {j.notes.map((n) => <p key={n} className="tiny muted">{n}</p>)}
@@ -571,55 +572,109 @@ export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart
 }
 
 // ---------------- Journal & pins ----------------
+const METHOD_LABEL: Record<string, string> = { bow: 'Bow', crossbow: 'Crossbow', rifle: 'Rifle', muzzleloader: 'Muzzleloader' };
+const PIN_LABEL: Record<string, string> = { stand: 'Stand', sighting: 'Deer sighting', rub: 'Rub', scrape: 'Scrape', trail: 'Deer trail', bedding: 'Bedding', feeding: 'Feeding sign', camera: 'Trail camera', parking: 'Parking', harvest: 'Harvest', saved_candidate: 'Saved zone' };
+const PIN_DOT: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', saved_candidate: '#f7f2a1' };
+const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+/** "15:30" → "3:30 PM" */
+function clock(hhmm: string) {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+function EntryCard({ x, onEdit, onDelete }: { x: JournalEntry; onEdit: () => void; onDelete: () => void }) {
+  const [open, setOpen] = useState(false);
+  const details: [string, string][] = ([['Weather', x.weather], ['Wind', x.windObserved], ['Deer behavior', x.behavior], ['Sign', x.sign], ['Notes', x.notes]] as [string, string][]).filter(([, v]) => v);
+  return (
+    <div className={`jentry ${x.draft ? 'draft' : ''}`}>
+      <button className="jentry-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <div className="jentry-top">
+          <span className="jentry-date">{fmtDate(x.date, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+          {x.start && <span className="muted small">{clock(x.start)}{x.end && `–${clock(x.end)}`}</span>}
+          <span className="grow" />
+          {x.draft ? <span className="badge badge-draft">Draft</span> : x.harvest !== 'none' ? <span className="badge badge-harvest">{x.harvest === 'buck' ? 'Buck down' : 'Doe down'}</span> : null}
+        </div>
+        <div className="jentry-loc">{x.location || <span className="muted">No location</span>}</div>
+        <div className="jentry-chips">
+          <span className="jchip">{METHOD_LABEL[x.method] ?? cap(x.method)}</span>
+          <span className="jchip">{x.deerSeen} deer seen</span>
+          {x.pressure !== 'none' && <span className="jchip">{cap(x.pressure)} pressure</span>}
+          {x.predictedScore != null && <span className="jchip">Predicted {x.predictedScore}</span>}
+          {details.length > 0 && <span className="jchip jchip-more">{open ? 'Less ▴' : 'More ▾'}</span>}
+        </div>
+      </button>
+      {open && details.length > 0 && (
+        <dl className="jentry-details">
+          {details.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd>{v}</dd></div>))}
+        </dl>
+      )}
+      <div className="jentry-actions">
+        <button className="btn btn-ghost small" onClick={onEdit}>Edit</button>
+        <button className="btn btn-ghost small" onClick={() => { if (confirm('Delete this journal entry?')) onDelete(); }}>Delete</button>
+      </div>
+    </div>
+  );
+}
+
 export function JournalPanel({ entries, onSave, onDelete, pins, onDeletePin, draft, onFly, onFetchWeather }: { entries: JournalEntry[]; onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; pins: UserPin[]; onDeletePin: (id: string) => void; draft: Partial<JournalEntry> | null; onFly: (c: [number, number]) => void; onFetchWeather: (date: string, coord: [number, number] | null) => Promise<string | null> }) {
   const [wxBusy, setWxBusy] = useState(false);
   const blank = (): JournalEntry => ({ id: uid(), date: localDate(), start: '', end: '', location: '', coord: null, method: 'bow', weather: '', windObserved: '', deerSeen: 0, behavior: '', harvest: 'none', pressure: 'none', sign: '', notes: '', created: new Date().toISOString(), ...draft });
-  const [e, setE] = useState<JournalEntry>(blank);
-  const set = <K extends keyof JournalEntry>(k: K, v: JournalEntry[K]) => setE({ ...e, [k]: v });
+  // The form opens automatically when arriving from "Log hunt" on a zone; otherwise entries come first.
+  const [editing, setEditing] = useState<JournalEntry | null>(() => (draft ? blank() : null));
+  const e = editing;
+  const set = <K extends keyof JournalEntry>(k: K, v: JournalEntry[K]) => setEditing((cur) => (cur ? { ...cur, [k]: v } : cur));
+  const isNew = !!e && !entries.some((x) => x.id === e.id);
+  const sorted = [...entries].sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
   return (
     <>
-      <section className="card form">
-        <h2>Hunt journal</h2>
-        <p className="tiny muted">Private: stored only on this device. Record unsuccessful hunts too — one blank sit doesn't invalidate a zone.</p>
-        <div className="grid2">
-          <label>Date<input type="date" value={e.date} onChange={(x) => set('date', x.target.value)} /></label>
-          <label>Method<select value={e.method} onChange={(x) => set('method', x.target.value)}>{['bow', 'crossbow', 'rifle', 'muzzleloader'].map((m) => <option key={m}>{m}</option>)}</select></label>
-          <label>Start<input type="time" value={e.start} onChange={(x) => set('start', x.target.value)} /></label>
-          <label>End<input type="time" value={e.end} onChange={(x) => set('end', x.target.value)} /></label>
-        </div>
-        <label>Location / zone<input value={e.location} onChange={(x) => set('location', x.target.value)} placeholder="e.g. BH-SA-0012 north bench" /></label>
-        <div className="grid2">
-          <label>Deer seen<input type="number" min={0} value={e.deerSeen} onChange={(x) => set('deerSeen', Number(x.target.value))} /></label>
-          <label>Harvest<select value={e.harvest} onChange={(x) => set('harvest', x.target.value as JournalEntry['harvest'])}><option value="none">None</option><option value="buck">Buck</option><option value="doe">Doe</option></select></label>
-          <label>Hunter pressure<select value={e.pressure} onChange={(x) => set('pressure', x.target.value as JournalEntry['pressure'])}>{['none', 'low', 'moderate', 'high'].map((m) => <option key={m}>{m}</option>)}</select></label>
-          <label>Wind observed<input value={e.windObserved} onChange={(x) => set('windObserved', x.target.value)} placeholder="NW swirling" /></label>
-        </div>
-        <label>Weather<div className="row"><input value={e.weather} onChange={(x) => set('weather', x.target.value)} className="grow" /><button className="btn small" disabled={wxBusy} onClick={async () => { setWxBusy(true); const t = await onFetchWeather(e.date, e.coord); setWxBusy(false); if (t) set('weather', t); else alert('No archived weather for that date yet (Open-Meteo lags a few days).'); }}>{wxBusy ? '…' : 'Auto-fill'}</button></div></label>
-        <label>Deer behavior<input value={e.behavior} onChange={(x) => set('behavior', x.target.value)} /></label>
-        <label>Sign found<input value={e.sign} onChange={(x) => set('sign', x.target.value)} /></label>
-        <label>Notes<textarea rows={3} value={e.notes} onChange={(x) => set('notes', x.target.value)} /></label>
-        <div className="row"><button className="btn btn-primary" onClick={() => { onSave(e); setE(blank()); }}>Save entry</button><button className="btn btn-ghost" onClick={() => onSave({ ...e, draft: true })}>Save draft</button></div>
-      </section>
-      <section className="card">
-        <h2>Entries ({entries.length})</h2>
-        {entries.length === 0 && <p className="muted small">No entries yet.</p>}
-        {entries.map((x) => (
-          <div key={x.id} className="entry">
-            <div><b>{x.date}</b> {x.start && `${x.start}–${x.end}`} · {x.method} · {x.location || 'no location'} {x.draft && <span className="pill pill-na">draft</span>}</div>
-            <div className="small">Deer seen {x.deerSeen} · harvest {x.harvest} · pressure {x.pressure}{x.predictedScore != null && ` · predicted score ${x.predictedScore}`}</div>
-            {x.notes && <div className="small muted">{x.notes}</div>}
-            <div className="row">{x.draft && <button className="btn btn-ghost small" onClick={() => setE(x)}>Edit</button>}<button className="btn btn-ghost small" onClick={() => onDelete(x.id)}>Delete</button></div>
+      {e ? (
+        <section className="card form jform">
+          <div className="card-head"><h2>{isNew ? 'New hunt entry' : 'Edit entry'}</h2><button className="btn btn-ghost small" onClick={() => setEditing(null)}>Cancel</button></div>
+          <div className="jgrid">
+            <label className="field">Date<input type="date" value={e.date} onChange={(x) => set('date', x.target.value)} /></label>
+            <label className="field">Method<select value={e.method} onChange={(x) => set('method', x.target.value)}>{Object.entries(METHOD_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+            <label className="field">Start<input type="time" value={e.start} onChange={(x) => set('start', x.target.value)} /></label>
+            <label className="field">End<input type="time" value={e.end} onChange={(x) => set('end', x.target.value)} /></label>
+            <label className="field span2">Location / zone<input value={e.location} onChange={(x) => set('location', x.target.value)} placeholder="e.g. BH-SA-0012 north bench" /></label>
+            <label className="field">Deer seen<input type="number" inputMode="numeric" min={0} value={e.deerSeen} onChange={(x) => set('deerSeen', Math.max(0, Number(x.target.value)))} /></label>
+            <label className="field">Harvest<select value={e.harvest} onChange={(x) => set('harvest', x.target.value as JournalEntry['harvest'])}><option value="none">None</option><option value="buck">Buck</option><option value="doe">Doe</option></select></label>
+            <label className="field">Hunter pressure<select value={e.pressure} onChange={(x) => set('pressure', x.target.value as JournalEntry['pressure'])}>{['none', 'low', 'moderate', 'high'].map((m) => <option key={m} value={m}>{cap(m)}</option>)}</select></label>
+            <label className="field">Wind observed<input value={e.windObserved} onChange={(x) => set('windObserved', x.target.value)} placeholder="NW, swirling late" /></label>
+            <div className="field span2"><span>Weather</span><div className="row"><input aria-label="Weather" value={e.weather} onChange={(x) => set('weather', x.target.value)} className="grow" placeholder="Tap Auto-fill for that day's weather" /><button type="button" className="btn small" disabled={wxBusy} onClick={async () => { setWxBusy(true); const t = await onFetchWeather(e.date, e.coord); setWxBusy(false); if (t) set('weather', t); else alert('No archived weather for that date yet (Open-Meteo lags a few days).'); }}>{wxBusy ? '…' : 'Auto-fill'}</button></div></div>
+            <label className="field span2">Deer behavior<input value={e.behavior} onChange={(x) => set('behavior', x.target.value)} placeholder="Feeding, chasing, crossing the draw…" /></label>
+            <label className="field span2">Sign found<input value={e.sign} onChange={(x) => set('sign', x.target.value)} placeholder="Rubs, scrapes, tracks…" /></label>
+            <label className="field span2">Notes<textarea rows={4} value={e.notes} onChange={(x) => set('notes', x.target.value)} /></label>
           </div>
-        ))}
-      </section>
+          <div className="jform-actions">
+            <button className="btn btn-primary" onClick={() => { onSave({ ...e, draft: false }); setEditing(null); }}>Save entry</button>
+            <button className="btn" onClick={() => { onSave({ ...e, draft: true }); setEditing(null); }}>Save as draft</button>
+          </div>
+        </section>
+      ) : (
+        <section className="card jhead">
+          <div className="card-head"><h2>Hunt journal <span className="muted">({entries.length})</span></h2><button className="btn btn-primary small" onClick={() => setEditing(blank())}>+ New entry</button></div>
+          <p className="tiny muted">Private — stored only on this device. Log blank sits too; one slow hunt doesn't rule out a spot.</p>
+        </section>
+      )}
+      {!e && (
+        <section className="card">
+          {sorted.length === 0 && <p className="muted small">No entries yet. After a hunt, tap <b>+ New entry</b> (or <b>Log hunt</b> on a zone).</p>}
+          {sorted.map((x) => <EntryCard key={x.id} x={x} onEdit={() => setEditing({ ...x })} onDelete={() => onDelete(x.id)} />)}
+        </section>
+      )}
       <section className="card">
-        <h2>Private pins ({pins.length})</h2>
+        <h2>Private pins <span className="muted">({pins.length})</span></h2>
         <p className="tiny muted">Tap anywhere on the map to add a pin. Pins never leave this device.</p>
         {pins.map((p) => (
-          <div key={p.id} className="entry row">
-            <span className="grow"><b>{p.kind.replace('_', ' ')}</b> {p.candidateId ?? ''} <span className="tiny muted">{p.coord[1].toFixed(5)}, {p.coord[0].toFixed(5)}</span></span>
+          <div key={p.id} className="pin-row">
+            <i className="pin-dot" style={{ background: PIN_DOT[p.kind] ?? '#fff' }} />
+            <div className="grow pin-text">
+              <b>{PIN_LABEL[p.kind] ?? cap(p.kind)}</b>{p.candidateId && <span className="muted"> · {p.candidateId}</span>}{p.note && p.kind !== 'saved_candidate' && <span className="muted"> · {p.note}</span>}
+              <div className="tiny muted coords">{p.coord[1].toFixed(5)}, {p.coord[0].toFixed(5)}</div>
+            </div>
             <button className="btn btn-ghost small" onClick={() => onFly(p.coord)}>Show</button>
-            <button className="btn btn-ghost small" onClick={() => onDeletePin(p.id)}>✕</button>
+            <button className="btn btn-ghost small" aria-label="Delete pin" onClick={() => { if (confirm('Delete this pin?')) onDeletePin(p.id); }}>✕</button>
           </div>
         ))}
       </section>

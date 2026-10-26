@@ -1,6 +1,6 @@
 # Bankhead Hunt Intelligence
 
-Mobile-first PWA that ranks scouting/hunting zones on **Black Warrior WMA (Bankhead National Forest, Alabama)** for whitetail deer using terrain, habitat, wind/scent, access, time-of-day/rut context, weather, and **verified 2026-27 regulations**, and explains every ranking.
+Mobile-first PWA that ranks scouting/hunting zones across **Bankhead National Forest, Alabama**, on both the Black Warrior WMA and National Forest land outside it, for whitetail deer using terrain, habitat, wind/scent, access, time-of-day/rut context, weather, and **verified 2026-27 regulations**, and explains every ranking.
 
 Live: **https://bankhead.web.app** (Firebase Hosting, project `rehtac-labs`, site `bankhead`)
 
@@ -39,7 +39,7 @@ Engine modules (`src/engine`):
 ```bash
 npm install
 npm run dev          # local dev server
-npm test             # 63 engine tests (jurisdiction, regulations, wind, time/DST, data failures, scoring)
+npm test             # 76 engine tests (jurisdiction, regulations, wind, time/DST, data failures, scoring)
 npm run data         # re-download sources + rebuild terrain candidates + registry
 npm run deploy       # build + firebase deploy --only hosting:bankhead --project rehtac-labs
 ```

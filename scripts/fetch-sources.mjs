@@ -9,7 +9,8 @@ import * as turf from '@turf/turf';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const RAW = path.join(ROOT, 'research', 'raw');
 const OUT = path.join(ROOT, 'public', 'data');
-export const BBOX = [-87.56, 34.2, -87.2, 34.47];
+import { BBOX } from './config.mjs';
+export { BBOX };
 
 const FS = 'https://apps.fs.usda.gov/arcx/rest/services/EDW';
 const ADCNR = 'https://conservationgis.alabama.gov/adcnrweb/rest/services/WildlifeManagementAreas/MapServer/0';

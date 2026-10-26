@@ -4,13 +4,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import * as turf from '@turf/turf';
+import { overpass } from './lib/overpass.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BBOX = [-87.56, 34.2, -87.2, 34.47];
+import { BBOX } from './config.mjs';
 const q = `[out:json][timeout:60];way["highway"]["ref"~"^(AL|SR) ?(33|195|36)$"](${BBOX[1]},${BBOX[0]},${BBOX[3]},${BBOX[2]});out geom;`;
-const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'User-Agent': 'BankheadHuntIntel/1.0 (rehtac)' } });
-if (!r.ok) throw new Error('overpass ' + r.status);
-const j = await r.json();
+const j = await overpass(q);
 const feats = j.elements.filter((e) => e.geometry).map((e) => turf.lineString(e.geometry.map((g) => [g.lon, g.lat]), { ref: e.tags.ref.replace('SR', 'AL').replace(/\s+/, ' '), name: e.tags.name ?? null, osm_id: e.id }));
 const fc = turf.truncate(turf.featureCollection(feats), { precision: 6 });
 const body = JSON.stringify(fc);

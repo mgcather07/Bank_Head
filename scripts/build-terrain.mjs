@@ -17,11 +17,11 @@ import { buildNetwork, nearestNode, dijkstra, pathTo } from './lib/network.mjs';
 const ROOT = path.resolve(import.meta.dirname, '..');
 const RAW = path.join(ROOT, 'research', 'raw');
 const OUT = path.join(ROOT, 'public', 'data');
-const BBOX = [-87.56, 34.2, -87.2, 34.47];
-const W = 1296;
-const H = 972; // 1 arc-second grid
+import { BBOX } from './config.mjs';
+const W = Math.round((BBOX[2] - BBOX[0]) * 3600);
+const H = Math.round((BBOX[3] - BBOX[1]) * 3600); // 1 arc-second grid
 const DEG = 1 / 3600;
-export const ALGORITHM_VERSION = 'terrain-1.1.0';
+export const ALGORITHM_VERSION = 'terrain-1.2.0';
 
 const sources = [];
 
@@ -292,6 +292,20 @@ for (let i = 0; i < W * H; i++) {
 // ---------- boundaries & access ----------
 const readGeo = async (f) => JSON.parse(await fs.readFile(path.join(OUT, f), 'utf8'));
 const wma = await readGeo('wma.geojson');
+const nfAdmin = await readGeo('nf-admin.geojson');
+const zoneD = await readGeo('deer-zone-d.geojson');
+const zoneDLines = flatLinesEarly(await readGeo('deer-zone-boundary.geojson'));
+const counties = await readGeo('counties.geojson');
+const ZONE_C_COUNTIES = new Set(['Winston', 'Lawrence', 'Walker', 'Cullman']);
+function flatLinesEarly(fc) { return fc.features.flatMap((f) => (f.geometry.type === 'MultiLineString' ? f.geometry.coordinates.map((c) => turf.lineString(c)) : [f])); }
+/** Statewide deer zone for NF land off the WMA: D inside the reconstructed Zone D line, C in Winston/Lawrence/Walker/Cullman outside it, null within 400 m of the line or elsewhere. */
+function deerZoneFor(pt) {
+  const dLine = Math.min(...zoneDLines.map((l) => turf.pointToLineDistance(pt, l, { units: 'meters' })));
+  if (dLine < 400) return { deerZone: null, distToDeerZoneLine: Math.round(dLine) };
+  if (zoneD.features.some((f) => turf.booleanPointInPolygon(pt, f))) return { deerZone: 'D', distToDeerZoneLine: Math.round(dLine) };
+  const c = counties.features.find((f) => turf.booleanPointInPolygon(pt, f));
+  return { deerZone: c && ZONE_C_COUNTIES.has(c.properties.name) ? 'C' : null, distToDeerZoneLine: Math.round(dLine) };
+}
 const own = await readGeo('ownership.geojson');
 const wild = await readGeo('wilderness.geojson');
 const recSites = await readGeo('rec-sites.geojson');
@@ -410,7 +424,7 @@ const circMean = (angles) => {
 const ASPECT_NAMES = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const raw = [];
-const rejected = { outsideWma: 0, notFsOwned: 0, safetyBuffer: 0, nearRoad: 0, roadCrosses: 0, tooLarge: 0 };
+const rejected = { outsidePublicLand: 0, outsideWma: 0, notFsOwned: 0, safetyBuffer: 0, nearRoad: 0, roadCrosses: 0, tooLarge: 0 };
 for (const def of FEATURE_DEFS) {
   for (const cells of components(def.mask, def.min)) {
     // representative cell: the one nearest the component centroid
@@ -430,7 +444,9 @@ for (const r of raw) {
   const { def, cx, cy } = r;
   const lon = lonOf(cx), lat = latOf(cy);
   const pt = turf.point([lon, lat]);
-  if (!inAny(pt, wma.features)) { rejected.outsideWma++; continue; }
+  // Public land: Black Warrior WMA, or Forest Service-owned land inside the Bankhead NF boundary.
+  const inWma = inAny(pt, wma.features);
+  if (!inWma && !inAny(pt, nfAdmin.features)) { rejected.outsidePublicLand++; continue; }
   if (!inAny(pt, fsOwned)) { rejected.notFsOwned++; continue; }
   const nearRec = recSites.features.some((f) => turf.distance(pt, f, { units: "meters" }) < 400);
   if (nearRec) { rejected.safetyBuffer++; continue; }
@@ -537,7 +553,8 @@ for (const r of raw) {
     return { accessPointId: a.id, name: a.name, kind: a.kind, coord: a.coord, verification: a.verified, straightLineMeters: Math.round(d), walkMeters: walkM, onNetworkMeters: Math.round(onNetworkM), offTrailMeters: Math.round(offTrailM), routeKind: verifiedRoute ? 'network+offtrail' : 'straight', path: simp, profile: prof, gainInMeters: Math.round(gainIn), gainOutMeters: Math.round(gainOut), maxSlopeDeg: Math.round(maxSlope), approachBearing: Math.round(turf.bearing(turf.point(coords[Math.max(0, coords.length - 2)]), pt) + 360) % 360 };
   }).sort((p, q) => p.walkMeters - q.walkMeters).slice(0, 2);
 
-  const zoneInfo = zoneFor(pt);
+  const zoneInfo = inWma ? zoneFor(pt) : { zone: null, provisionalZone: null, distToDivider: null };
+  const dz = inWma ? { deerZone: 'D', distToDeerZoneLine: null } : deerZoneFor(pt);
   const wilderness = inAny(pt, wild.features);
   const distTrail = Math.min(...trailLines.map((f) => turf.pointToLineDistance(pt, f, { units: 'meters' })));
   const distRoad = Math.min(...roadLines.map((f) => turf.pointToLineDistance(pt, f, { units: 'meters' })));
@@ -560,6 +577,7 @@ for (const r of raw) {
       disturbance: Object.fromEntries(Object.entries(disturbance).map(([k, v]) => [k, +v.toFixed(3)])),
       beddingCoverBearing: beddingBearing ? Math.round(beddingBearing.mean) : null, beddingCoverConsistency: beddingBearing ? +beddingBearing.r.toFixed(2) : null,
       foodWaterBearing: foodWaterBearing ? Math.round(foodWaterBearing.mean) : null, foodWaterConsistency: foodWaterBearing ? +foodWaterBearing.r.toFixed(2) : null,
+      jurisdiction: inWma ? 'black_warrior_wma' : 'nf_outside_wma', deerZone: dz.deerZone, distToDeerZoneLine: dz.distToDeerZoneLine,
       zone: zoneInfo.zone, provisionalZone: zoneInfo.provisionalZone, distToZoneDivider: zoneInfo.distToDivider, wilderness, areaHa: +areaHa.toFixed(1), routes,
     },
   });

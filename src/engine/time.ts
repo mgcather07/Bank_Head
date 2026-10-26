@@ -1,7 +1,7 @@
 import * as SunCalc from 'suncalc';
 
 export const TZ = 'America/Chicago';
-export const BANKHEAD_CENTER: [number, number] = [-87.36, 34.33];
+export const BANKHEAD_CENTER: [number, number] = [-87.37, 34.23]; // centre of Bankhead National Forest
 
 const partsFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', weekday: 'short' });
 

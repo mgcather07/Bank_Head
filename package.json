@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "data:fetch": "node scripts/fetch-sources.mjs && node scripts/fetch-osm-highways.mjs && node scripts/fetch-osm-roads.mjs",
+    "data:fetch": "node scripts/fetch-sources.mjs && node scripts/fetch-osm-highways.mjs && node scripts/fetch-osm-roads.mjs && node scripts/build-deer-zones.mjs",
     "data:terrain": "node --max-old-space-size=4096 scripts/build-terrain.mjs",
     "data:registry": "node scripts/build-registry.mjs",
     "data": "npm run data:fetch && npm run data:terrain && npm run data:registry",

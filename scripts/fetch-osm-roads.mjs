@@ -4,14 +4,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import * as turf from '@turf/turf';
+import { overpass } from './lib/overpass.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const BBOX = [-87.56, 34.2, -87.2, 34.47];
+import { BBOX } from './config.mjs';
 const KINDS = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track|road|living_street';
 const q = `[out:json][timeout:120];way["highway"~"^(${KINDS})$"](${BBOX[1]},${BBOX[0]},${BBOX[3]},${BBOX[2]});out geom;`;
-const r = await fetch('https://overpass-api.de/api/interpreter', { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'User-Agent': 'BankheadHuntIntel/1.0 (rehtac)' } });
-if (!r.ok) throw new Error('overpass ' + r.status);
-const j = await r.json();
+const j = await overpass(q);
 const feats = j.elements.filter((e) => e.geometry?.length > 1).map((e) => turf.lineString(e.geometry.map((g) => [g.lon, g.lat]), { highway: e.tags.highway, name: e.tags.name ?? null, ref: e.tags.ref ?? null, access: e.tags.access ?? null, osm_id: e.id }));
 const fc = turf.truncate(turf.simplify(turf.featureCollection(feats), { tolerance: 0.00002 }), { precision: 5 });
 const body = JSON.stringify(fc);

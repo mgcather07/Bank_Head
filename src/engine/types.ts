@@ -84,6 +84,9 @@ export interface CandidateProps {
   /** Set for user-checked spots; generated candidates are always inside the WMA on FS land. */
   jurisdiction?: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown';
   landform?: string;
+  /** Statewide deer zone (C or D); null near the C/D line. WMA zones use the WMA calendar. */
+  deerZone?: 'C' | 'D' | null;
+  distToDeerZoneLine?: number | null;
 }
 
 export interface Candidate {

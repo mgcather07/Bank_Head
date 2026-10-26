@@ -1,1 +1,1 @@
-{"version":"terrain-1.1.0","bbox":[-87.56,34.2,-87.2,34.47],"width":648,"height":486,"cellDeg":0.0005555555555555556,"layout":["elev:u16/2","slope:u8/4","aspect:u8*2","tpiL:i8/25","tpiS:i8/25","distStream:u8*8","mask:u8","hab:u8"]}
+{"version":"terrain-1.2.0","bbox":[-87.66,33.96,-87.08,34.5],"width":1044,"height":972,"cellDeg":0.0005555555555555556,"layout":["elev:u16/2","slope:u8/4","aspect:u8*2","tpiL:i8/25","tpiS:i8/25","distStream:u8*8","mask:u8","hab:u8"]}

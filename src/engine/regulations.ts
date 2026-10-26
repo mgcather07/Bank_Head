@@ -17,6 +17,7 @@ export const GOVERNING_LINKS = [
   { title: 'WMA Regulation 220-2-.55 (OutdoorAlabama.com/WMARules)', url: 'https://www.outdooralabama.com/WMARules' },
   { title: 'Alabama Admin. Code 220-2-.56 (WMA seasons)', url: 'https://admincode.legislature.state.al.us/administrative-code/220-2-.56' },
   { title: 'Alabama hunting & fishing regulations', url: 'https://www.outdooralabama.com/hunting/alabama-hunting-and-fishing-regulations' },
+  { title: '2026-27 statewide deer seasons by zone (National Forest land outside the WMA)', url: 'https://www.outdooralabama.com/seasons-and-bag-limits/deer-season' },
   { title: 'ADCNR Wildlife Management Areas', url: 'https://www.outdooralabama.com/hunting/wildlife-management-areas' },
 ];
 
@@ -87,6 +88,8 @@ export interface LegalQuery {
   jurisdiction: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown';
   zone: Zone | null;
   youthHunter?: boolean;
+  /** Statewide deer zone (only used off the WMA). null = near the C/D line or outside modeled counties. */
+  deerZone?: DeerZone | null;
 }
 
 const result = (status: LegalEvaluation['status'], summary: string, extra: Partial<LegalEvaluation> = {}): LegalEvaluation => ({
@@ -163,9 +166,7 @@ export function evaluateLegal(q: LegalQuery): LegalEvaluation {
   if (q.jurisdiction === 'private_or_unknown') {
     return result('verified_prohibited', 'Public hunting access is not established at this location (private inholding or non-public land). No recommendation is generated here.');
   }
-  if (q.jurisdiction === 'nf_outside_wma') {
-    return result('requires_verification', 'Regulations require verification — this point is National Forest land outside the Black Warrior WMA boundary. Statewide seasons and Forest Service rules apply; this app does not yet model them.');
-  }
+  if (q.jurisdiction === 'nf_outside_wma') return evaluateStatewide(q);
   if (q.zone) return evalZone(q, q.zone);
   // Zone unknown (near the AL 33 divider): only allowed if both zones agree.
   const a = evalZone(q, 'A');
@@ -178,4 +179,108 @@ export function evaluateLegal(q: LegalQuery): LegalEvaluation {
 
 export function weaponLabel(w: Weapon): string {
   return { bow: 'Compound bow', crossbow: 'Crossbow', rifle: 'Rifle', muzzleloader: 'Muzzleloader' }[w];
+}
+
+// ======================= Statewide seasons (National Forest land outside the WMA) =======================
+// Transcribed from the official 2026-27 deer season page, PUBLIC LAND columns (Bankhead NF is public land).
+// Bankhead NF lies in Deer Zone D (most of it) and Zone C (east of the Helicon Rd / CR 41 / Sipsey Fork line and
+// south of the Winston/Walker line). Zone membership is derived — see scripts/build-deer-zones.mjs.
+export type DeerZone = 'C' | 'D';
+
+export const STATEWIDE_SOURCE = {
+  id: 'adcnr-deer-season-2026-27',
+  title: '2026-27 Alabama deer seasons and bag limits (OutdoorAlabama.com)',
+  url: 'https://www.outdooralabama.com/seasons-and-bag-limits/deer-season',
+  version: '2026-27 (transcribed 2026-10-25; zone map image labelled "Proposed")',
+  validFrom: '2026-09-01',
+  validTo: '2027-08-31',
+};
+
+type SwKind = 'archery' | 'youth_gun' | 'muzzleloader' | 'gun';
+interface SwPeriod { kind: SwKind; start: string; end: string; eitherSex: boolean; name: string }
+
+export const STATEWIDE_PUBLIC: Record<DeerZone, SwPeriod[]> = {
+  D: [
+    { kind: 'archery', start: '2026-10-01', end: '2027-01-15', eitherSex: true, name: 'Archery' },
+    { kind: 'archery', start: '2027-01-16', end: '2027-01-27', eitherSex: false, name: 'Archery (bucks only)' },
+    { kind: 'youth_gun', start: '2026-10-30', end: '2026-11-02', eitherSex: true, name: 'Special youth gun' },
+    { kind: 'muzzleloader', start: '2026-11-02', end: '2026-11-06', eitherSex: true, name: 'Special muzzleloader / air rifle (stalk only)' },
+    { kind: 'gun', start: '2026-11-07', end: '2026-12-11', eitherSex: false, name: 'Gun, public land (bucks only)' },
+    { kind: 'gun', start: '2026-12-12', end: '2027-01-01', eitherSex: true, name: 'Gun, public land (either sex)' },
+    { kind: 'gun', start: '2027-01-02', end: '2027-01-27', eitherSex: false, name: 'Gun, public land (bucks only)' },
+  ],
+  C: [
+    { kind: 'archery', start: '2026-10-15', end: '2027-02-10', eitherSex: true, name: 'Archery' },
+    { kind: 'youth_gun', start: '2026-11-13', end: '2026-11-16', eitherSex: true, name: 'Special youth gun' },
+    { kind: 'muzzleloader', start: '2026-11-16', end: '2026-11-20', eitherSex: true, name: 'Special muzzleloader / air rifle (stalk only)' },
+    { kind: 'gun', start: '2026-11-21', end: '2026-12-11', eitherSex: false, name: 'Gun, public land (bucks only)' },
+    { kind: 'gun', start: '2026-12-12', end: '2027-01-01', eitherSex: true, name: 'Gun, public land (either sex)' },
+    { kind: 'gun', start: '2027-01-02', end: '2027-02-10', eitherSex: false, name: 'Gun, public land (bucks only)' },
+  ],
+};
+
+const SW_BAG: Record<DeerZone, string> = {
+  D: 'One antlered buck per day and up to two unantlered deer per day (unantlered limit applies during archery, special muzzleloader and youth seasons and either-sex gun days).',
+  C: 'One unantlered deer and one antlered buck per day.',
+};
+const SW_BUCK_RULE = 'Statewide: 3 antlered bucks per season; one of the three must have at least 4 antler points 1 inch or longer on one antler.';
+const SW_REQUIREMENTS = [
+  'Alabama hunting license (all-game or resident/non-resident as applicable). No WMA license or AREA permit is needed off the WMA.',
+  'Report harvested deer through Game Check before moving the deer.',
+  'No dog deer hunting on public land.',
+  'Portable stands only on National Forest land; no screw-in steps, spikes or nails. Use a fall-restraint harness.',
+  'Know the boundary: private inholdings are common inside the National Forest.',
+];
+
+export function swPeriodsOn(date: string, zone: DeerZone) {
+  return STATEWIDE_PUBLIC[zone].filter((p) => within(date, p.start, p.end));
+}
+
+export function isStatewideGunDay(date: string, zone: DeerZone | null): boolean {
+  if (!zone) return (['C', 'D'] as DeerZone[]).some((z) => swPeriodsOn(date, z).some((p) => p.kind === 'gun'));
+  return swPeriodsOn(date, zone).some((p) => p.kind === 'gun' || p.kind === 'muzzleloader');
+}
+
+function evalStatewideZone(q: LegalQuery, zone: DeerZone): LegalEvaluation {
+  const active = swPeriodsOn(q.date, zone);
+  const requirements = [...SW_REQUIREMENTS];
+  const exceptions: string[] = [];
+  const youth = active.find((p) => p.kind === 'youth_gun');
+  const gun = active.find((p) => p.kind === 'gun');
+  const muzz = active.find((p) => p.kind === 'muzzleloader');
+  if (gun || youth || muzz) requirements.push('A gun or youth deer season is open — hunter-orange requirements apply; see Alabama statewide regulations.');
+  if (youth) exceptions.push(`Special youth gun season (${youth.start}–${youth.end}): hunters under 16 with a licensed adult. Other legal seasons stay open on public land.`);
+  let period: SwPeriod | undefined;
+  if (q.weapon === 'bow' || q.weapon === 'crossbow') period = active.find((p) => p.kind === 'archery');
+  else if (q.weapon === 'muzzleloader') period = gun ?? muzz ?? (q.youthHunter ? youth : undefined);
+  else if (q.weapon === 'rifle') period = gun ?? (q.youthHunter ? youth : undefined);
+  if (q.weapon === 'crossbow') exceptions.push('Crossbows are legal archery equipment in Alabama — confirm current equipment rules.');
+  const src = { id: STATEWIDE_SOURCE.id, title: STATEWIDE_SOURCE.title, url: STATEWIDE_SOURCE.url, version: STATEWIDE_SOURCE.version };
+  if (!period) {
+    const msg = active.length
+      ? `${weaponLabel(q.weapon)} is not legal on ${q.date} in Deer Zone ${zone} (public land). Open: ${active.map((p) => p.name).join(', ')}${youth && !q.youthHunter ? ' (youth season is for hunters under 16)' : ''}.`
+      : `No deer season is open on ${q.date} in Deer Zone ${zone}.`;
+    return { status: 'verified_prohibited', summary: msg, huntName: null, bag: null, antlerRestriction: SW_BUCK_RULE, requirements, exceptions, ruleSource: src };
+  }
+  if (q.target === 'doe' && !period.eitherSex) {
+    return { status: 'verified_prohibited', summary: `${period.name}, Deer Zone ${zone}: antlered bucks only on ${q.date} — does may not be taken with a ${weaponLabel(q.weapon).toLowerCase()}.`, huntName: period.name, bag: 'One antlered buck per day', antlerRestriction: SW_BUCK_RULE, requirements, exceptions, ruleSource: src };
+  }
+  return {
+    status: 'verified_allowed',
+    summary: `${period.name} open on National Forest land in Deer Zone ${zone} for ${weaponLabel(q.weapon).toLowerCase()}.`,
+    huntName: `${period.name} (Zone ${zone}, public land)`,
+    bag: period.eitherSex ? SW_BAG[zone] : 'One antlered buck per day',
+    antlerRestriction: SW_BUCK_RULE,
+    requirements, exceptions, ruleSource: src,
+  };
+}
+
+function evaluateStatewide(q: LegalQuery): LegalEvaluation {
+  if (q.date < STATEWIDE_SOURCE.validFrom || q.date > STATEWIDE_SOURCE.validTo) return result('requires_verification', `Regulations require verification — statewide seasons loaded only for ${STATEWIDE_SOURCE.version}.`);
+  if (q.deerZone) return evalStatewideZone(q, q.deerZone);
+  // near the C/D line or outside the modeled counties: allowed only if both zones agree
+  const c = evalStatewideZone(q, 'C'), d = evalStatewideZone(q, 'D');
+  if (c.status === d.status && c.status !== 'verified_allowed') return { ...d, summary: `${d.summary.replace(/ in Deer Zone D/, '')} (same in Zones C and D)` };
+  if (c.status === 'verified_allowed' && d.status === 'verified_allowed' && c.huntName?.split(' (')[0] === d.huntName?.split(' (')[0]) return { ...d, summary: `${d.summary.replace(/ in Deer Zone D/, '')} (same in Zones C and D)`, bag: 'Zone C: one unantlered + one antlered buck per day; Zone D: up to two unantlered + one antlered buck per day.' };
+  return result('requires_verification', 'Regulations require verification — this spot is near the Deer Zone C/D line (or outside the counties modeled) and the seasons differ on this date. Check the zone map.', { exceptions: [`Zone C: ${c.summary}`, `Zone D: ${d.summary}`], ruleSource: { id: STATEWIDE_SOURCE.id, title: STATEWIDE_SOURCE.title, url: STATEWIDE_SOURCE.url, version: STATEWIDE_SOURCE.version } });
 }

@@ -21,8 +21,17 @@ const PHASES: PhaseDef[] = [
   { phase: 'late_season', from: '01-01', to: '01-31', label: 'Late season', note: 'Pressured deer; food and thermal cover dominate.' },
 ];
 
-export function rutPhase(date: string): PhaseDef & { confidence: 'low' } {
+// Deer Zone C (east edge of the National Forest) ruts later — ADCNR: north Alabama mid/late December into January.
+const PHASES_C: PhaseDef[] = [
+  { phase: 'early_season', from: '10-15', to: '11-30', label: 'Early season', note: 'Food-driven patterns; Zone C ruts later than Zone D.' },
+  { phase: 'pre_rut', from: '12-01', to: '12-19', label: 'Pre-rut', note: 'Rubs/scrapes increasing.' },
+  { phase: 'rut', from: '12-20', to: '12-31', label: 'Rut (estimated breeding)', note: 'Buck movement elevated; midday can be productive.' },
+  { phase: 'rut', from: '01-01', to: '01-20', label: 'Rut (estimated breeding)', note: 'Buck movement elevated; midday can be productive.' },
+  { phase: 'post_rut', from: '01-21', to: '02-10', label: 'Post-rut', note: 'Recovery feeding; evening food-related movement favored.' },
+];
+
+export function rutPhase(date: string, deerZone: 'C' | 'D' | null = 'D'): PhaseDef & { confidence: 'low' } {
   const md = date.slice(5);
-  const p = PHASES.find((x) => md >= x.from && md <= x.to);
+  const p = (deerZone === 'C' ? PHASES_C : PHASES).find((x) => md >= x.from && md <= x.to);
   return { ...(p ?? { phase: 'out_of_season', from: '', to: '', label: 'Outside deer season', note: '' }), confidence: 'low' };
 }

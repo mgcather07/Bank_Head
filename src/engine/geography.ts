@@ -2,6 +2,9 @@
 import type { Feature, FeatureCollection, LineString, MultiLineString, MultiPolygon, Polygon, Position } from 'geojson';
 
 export interface Layers {
+  zoneD?: FeatureCollection<Polygon | MultiPolygon>;
+  zoneDLines?: FeatureCollection<LineString | MultiLineString>;
+  counties?: FeatureCollection<Polygon | MultiPolygon>;
   wma: FeatureCollection<Polygon | MultiPolygon>;
   nfAdmin: FeatureCollection<Polygon | MultiPolygon>;
   ownership: FeatureCollection<Polygon | MultiPolygon>;
@@ -67,6 +70,7 @@ export interface Jurisdiction {
   zone: 'A' | 'B' | null;
   provisionalZone: 'A' | 'B' | null;
   distToDividerM: number | null;
+  deerZone: 'C' | 'D' | null;
   notes: string[];
 }
 
@@ -87,6 +91,23 @@ export function zoneFor(layers: Pick<Layers, 'highways'>, pt: [number, number]) 
   return { zone: best.d < ZONE_UNCERTAINTY_M ? null : (side as 'A' | 'B'), provisional: side as 'A' | 'B', dist: Math.round(best.d) };
 }
 
+const ZONE_C_COUNTIES = new Set(['Winston', 'Lawrence', 'Walker', 'Cullman']);
+export const DEER_ZONE_UNCERTAINTY_M = 400;
+
+/** Statewide deer zone at a point (reconstructed Zone D line; Zone C = rest of Winston/Lawrence/Walker/Cullman). */
+export function deerZoneAt(layers: Layers, pt: [number, number]): { deerZone: 'C' | 'D' | null; distToLine: number | null } {
+  if (!layers.zoneD || !layers.zoneDLines) return { deerZone: null, distToLine: null };
+  let d = Infinity;
+  for (const f of layers.zoneDLines.features) {
+    const lines = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.coordinates;
+    for (const l of lines) d = Math.min(d, nearestOnLine(l, pt).d);
+  }
+  if (d < DEER_ZONE_UNCERTAINTY_M) return { deerZone: null, distToLine: Math.round(d) };
+  if (anyContains(layers.zoneD, pt)) return { deerZone: 'D', distToLine: Math.round(d) };
+  const c = layers.counties?.features.find((f) => polygonContains(f.geometry, pt));
+  return { deerZone: c && ZONE_C_COUNTIES.has((c.properties as { name?: string })?.name ?? '') ? 'C' : null, distToLine: Math.round(d) };
+}
+
 export function lookupJurisdiction(layers: Layers, pt: [number, number]): Jurisdiction {
   const inWma = anyContains(layers.wma, pt);
   const inNfAdmin = anyContains(layers.nfAdmin, pt);
@@ -99,17 +120,20 @@ export function lookupJurisdiction(layers: Layers, pt: [number, number]): Jurisd
     if (z.zone == null) notes.push(`Within ${z.dist} m of AL 33 (Zone A/B divider) — confirm zone on the official map.`);
     if (wilderness) notes.push('Sipsey Wilderness: no motorized or mechanized travel; foot/horse access only.');
     notes.push('Zone A/B split digitized from AL 33 per the official 2026-27 permit map (derived, not an official zone polygon).');
-    return { kind: 'black_warrior_wma', label: `Black Warrior WMA${z.zone ? ` — Zone ${z.zone}` : ''}${wilderness ? ' (Sipsey Wilderness)' : ''}`, inWma, inNfAdmin, fsOwned, wilderness, zone: z.zone, provisionalZone: z.provisional, distToDividerM: z.dist, notes };
+    return { kind: 'black_warrior_wma', label: `Black Warrior WMA${z.zone ? ` — Zone ${z.zone}` : ''}${wilderness ? ' (Sipsey Wilderness)' : ''}`, inWma, inNfAdmin, fsOwned, wilderness, zone: z.zone, provisionalZone: z.provisional, distToDividerM: z.dist, deerZone: 'D', notes };
   }
   if (inWma && fsOwned === false) {
     notes.push('Inside the WMA outline but USFS ownership records show non-Forest Service land here. Treat as private until verified.');
-    return { kind: 'private_or_unknown', label: 'Non-FS parcel inside WMA outline', inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: z.provisional, distToDividerM: z.dist, notes };
+    return { kind: 'private_or_unknown', label: 'Non-FS parcel inside WMA outline', inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: z.provisional, distToDividerM: z.dist, deerZone: null, notes };
   }
   if (!inWma && fsOwned) {
-    notes.push('Forest Service land outside the Black Warrior WMA boundary. WMA permit rules do not apply; statewide seasons and USFS rules do.');
-    return { kind: 'nf_outside_wma', label: 'Bankhead NF (outside WMA)', inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: null, distToDividerM: null, notes };
+    const dz = deerZoneAt(layers, pt);
+    notes.push('Bankhead National Forest land outside the Black Warrior WMA: statewide public-land deer seasons apply (no WMA license or AREA permit).');
+    if (dz.deerZone == null) notes.push(dz.distToLine != null && dz.distToLine < DEER_ZONE_UNCERTAINTY_M ? `Within ${dz.distToLine} m of the Deer Zone C/D line — confirm your zone on the ADCNR map.` : 'Deer zone could not be determined here — check the ADCNR zone map.');
+    notes.push('Deer Zone D line reconstructed from the official 2026-27 boundary description (derived, not an official polygon).');
+    return { kind: 'nf_outside_wma', label: `Bankhead National Forest${dz.deerZone ? ` — Deer Zone ${dz.deerZone}` : ''}`, inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: null, distToDividerM: null, deerZone: dz.deerZone, notes };
   }
   if (inNfAdmin) notes.push('Inside the National Forest administrative boundary, but not Forest Service-owned per USFS ownership data — likely a private inholding.');
   else notes.push('Outside Bankhead National Forest and Black Warrior WMA.');
-  return { kind: 'private_or_unknown', label: inNfAdmin ? 'Private / non-FS inholding' : 'Outside public hunting land', inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: null, distToDividerM: null, notes };
+  return { kind: 'private_or_unknown', label: inNfAdmin ? 'Private / non-FS inholding' : 'Outside public hunting land', inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: null, distToDividerM: null, deerZone: null, notes };
 }

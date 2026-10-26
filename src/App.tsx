@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MLMap } from 'maplibre-gl';
 import { loadData, type AppData } from './data';
-import { MapView, type BaseMap, type LayerToggles, type SetupMarker, type ZoneTypeFilter } from './components/MapView';
+import { MapView, type BaseMap, type LandFilter, type LayerToggles, type SetupMarker, type ZoneTypeFilter } from './components/MapView';
 import { BackupPanel, HuntForm, InspectCard, JournalPanel, OfflinePanel, Outlook, PeekBar, RecCard, RecDetail, ScorePill, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
 import { CompassView } from './components/Compass';
 import { cachedTileCount, downloadArea, removeArea, tilesFor, type SavedArea } from './engine/offline';
@@ -25,8 +25,7 @@ type Tab = 'map' | 'hunt' | 'outlook' | 'journal' | 'sources';
 const PAGE_TITLE: Record<Tab, string> = { map: 'Map', hunt: 'Hunt', outlook: '7-Day Outlook', journal: 'Journal & Pins', sources: 'Info & Sources' };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type InstallPrompt = any;
-const BBOX = [-87.56, 34.2, -87.2, 34.47];
-const inStudyArea = (p: [number, number] | null) => !!p && p[0] > BBOX[0] && p[0] < BBOX[2] && p[1] > BBOX[1] && p[1] < BBOX[3];
+import { inStudyArea } from './engine/config';
 
 const DEFAULT_PREFS: HuntPreferences = { date: localDate(), session: 'compare', weapon: 'bow', target: 'any', maxWalkMeters: 3200, stand: 'climber', effort: 'balanced', youthHunter: false, start: null };
 const DEFAULT_LAYERS: LayerToggles = { boundaries: true, ownership: true, wilderness: true, roads: true, trails: true, streams: true, contours: true, slope: false, disturbance: false, candidates: true, access: true, pins: true };
@@ -40,6 +39,7 @@ export default function App() {
   const [base, setBase] = usePersisted<BaseMap>('bh.base.v1', 'topo');
   const [layers, setLayers] = usePersisted<LayerToggles>('bh.layers.v1', DEFAULT_LAYERS);
   const [typeFilter, setTypeFilter] = usePersisted<ZoneTypeFilter>('bh.typeFilter.v1', 'all');
+  const [landFilter, setLandFilter] = usePersisted<LandFilter>('bh.landFilter.v1', 'all');
   const [weather, setWeather] = useState<WeatherBundle | null>(null);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
@@ -158,9 +158,9 @@ export default function App() {
   const recs = useMemo(() => {
     if (!ranked) return [];
     const seen = new Set<string>();
-    return wanted.flatMap((s) => ranked.bySession[s]).filter((r) => typeFilter === 'all' || r.candidate.type === typeFilter).sort((a, b) => (a.legalStatus === b.legalStatus ? (b.score ?? -1) - (a.score ?? -1) : a.legalStatus === 'verified_allowed' ? -1 : 1)).filter((r) => (seen.has(r.areaId) ? false : (seen.add(r.areaId), true))).slice(0, 5);
+    return wanted.flatMap((s) => ranked.bySession[s]).filter((r) => (typeFilter === 'all' || r.candidate.type === typeFilter) && (landFilter === 'all' || (landFilter === 'nf') === (r.candidate.jurisdiction === 'nf_outside_wma'))).sort((a, b) => (a.legalStatus === b.legalStatus ? (b.score ?? -1) - (a.score ?? -1) : a.legalStatus === 'verified_allowed' ? -1 : 1)).filter((r) => (seen.has(r.areaId) ? false : (seen.add(r.areaId), true))).slice(0, 5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ranked, prefs.session, typeFilter]);
+  }, [ranked, prefs.session, typeFilter, landFilter]);
   const ratings = useMemo(() => ({ morning: ranked?.bySession.morning[0] ?? null, midday: ranked?.bySession.midday[0] ?? null, evening: ranked?.bySession.evening[0] ?? null }), [ranked]);
 
   const mapScores = useMemo(() => {
@@ -414,7 +414,7 @@ export default function App() {
   };
 
   const jur = inspect && data ? lookupJurisdiction(data, inspect) : null;
-  const jurLegal = jur ? evaluateLegal({ date: prefs.date, weapon: prefs.weapon, target: prefs.target, jurisdiction: jur.kind, zone: jur.zone, youthHunter: prefs.youthHunter }) : null;
+  const jurLegal = jur ? evaluateLegal({ date: prefs.date, weapon: prefs.weapon, target: prefs.target, jurisdiction: jur.kind, zone: jur.zone, youthHunter: prefs.youthHunter, deerZone: jur.deerZone }) : null;
   const saved = selected ? pins.some((p) => p.kind === 'saved_candidate' && p.candidateId === selected.areaId) : false;
   const ex = ranked?.excluded;
 
@@ -424,7 +424,7 @@ export default function App() {
         <div className="brand"><span className="logo">◭</span><div><b className="brand-name">BANKHEAD HUNT INTELLIGENCE</b><b className="page-title">{PAGE_TITLE[view]}</b><div className="tiny muted">{fmtDate(localDate())}{!online && ' · OFFLINE — cached data'}</div></div></div>
         {!standalone && (installEvt || isIOS) && <button className="btn small install-btn" onClick={onInstall}>⤓ Install</button>}
       </header>
-      <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
+      <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} landFilter={landFilter} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
       <div className="map-top">
         <div className="sun-chip" aria-label="Sunrise and sunset">
           <span>☀↑ <b>{fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).sunrise)}</b></span>
@@ -433,7 +433,12 @@ export default function App() {
         </div>
         <div className="type-chips" role="radiogroup" aria-label="Filter hunting areas by terrain type">
           {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
-            <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => c.properties.type === t).length}</small> : null}</button>
+            <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => c.properties.type === t && (landFilter === 'all' || (landFilter === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma'))).length}</small> : null}</button>
+          ))}
+        </div>
+        <div className="type-chips" role="radiogroup" aria-label="Filter by land">
+          {([['all', 'All land'], ['wma', 'Black Warrior WMA'], ['nf', 'National Forest']] as [LandFilter, string][]).map(([t, l]) => (
+            <button key={t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on land' : 'land'} onClick={() => setLandFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => (t === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma')).length}</small> : null}</button>
           ))}
         </div>
       </div>
@@ -452,7 +457,7 @@ export default function App() {
               ))}
               <div className="legend tiny">
                 <div><i style={{ background: '#5fbf5a' }} />High <i style={{ background: '#e0a43a' }} />Medium <i style={{ background: '#b0413e' }} />Low <i style={{ background: '#7a7a7a' }} />Not legal</div>
-                <div><i className="ln" style={{ background: '#f2b84b' }} />WMA <i className="ln" style={{ background: '#ffd84d' }} />Zone A|B (AL 33) <i style={{ background: '#d64545', opacity: 0.5 }} />Non-FS land</div>
+                <div><i className="ln" style={{ background: '#f2b84b' }} />WMA <i className="ln" style={{ background: '#9fe08a' }} />National Forest <i className="ln" style={{ background: '#ffd84d' }} />WMA Zone A|B <i className="ln" style={{ background: '#c38bff' }} />Deer Zone C|D <i style={{ background: '#d64545', opacity: 0.5 }} />Private</div>
                 <div><i className="ln" style={{ background: '#e36b5b' }} />NFS trail <i className="ln" style={{ background: '#f0e6d2' }} />FS road <i style={{ background: '#3fa7ff', borderRadius: 8 }} />Access</div>
                 <div><i style={{ background: '#ff7828' }} />Burn ≤1 yr <i style={{ background: '#ffaa3c' }} />2–5 yr <i style={{ background: '#e6c878' }} />6–10 yr <i style={{ background: '#78c8ff' }} />Timber/mech. <i className="ln" style={{ background: '#7ad0ff' }} />Route <i className="ln" style={{ background: '#ffd27a' }} />Off-trail</div>
               </div>
@@ -556,6 +561,11 @@ export default function App() {
                   <TodayCard date={prefs.date} sun={sun} weather={weather} weatherError={weatherError} alerts={alerts} alertsError={alertsError} ratings={ratings} onRefresh={() => refreshWeather(true)} refreshing={refreshing} selected={null} windHourIdx={windHourIdx} setWindHourIdx={setWindHourIdx} />
                   <section className="card">
                     <h2>Top hunting areas{typeFilter !== 'all' && <span className="muted"> · {({ saddle: 'saddles', bench: 'benches', spur: 'spurs', bottom: 'creek bottoms' } as Record<string, string>)[typeFilter]} only</span>}</h2>
+                    <div className="type-chips inline" role="radiogroup" aria-label="Filter by land">
+                      {([['all', 'All land'], ['wma', 'WMA'], ['nf', 'National Forest']] as [LandFilter, string][]).map(([t, l]) => (
+                        <button key={t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on' : ''} onClick={() => setLandFilter(t)}>{l}</button>
+                      ))}
+                    </div>
                     <div className="type-chips inline" role="radiogroup" aria-label="Filter by terrain type">
                       {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
                         <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}</button>
@@ -595,5 +605,5 @@ export default function App() {
 }
 
 const LAYER_LABEL: Record<keyof LayerToggles, string> = {
-  boundaries: 'WMA / NF / Zone A|B boundaries', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', disturbance: 'Burns & timber (LANDFIRE)', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
+  boundaries: 'WMA / National Forest / zone lines', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', disturbance: 'Burns & timber (LANDFIRE)', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
 };

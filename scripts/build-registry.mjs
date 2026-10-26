@@ -6,12 +6,13 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const RAW = path.join(ROOT, 'research', 'raw');
 const read = async (f) => JSON.parse(await fs.readFile(f, 'utf8'));
 const boundaries = await read(path.join(RAW, 'registry-boundaries.json'));
-const osm = [...(await read(path.join(RAW, 'registry-osm.json'))), ...(await read(path.join(RAW, 'registry-osm-roads.json')))];
+const osm = [...(await read(path.join(RAW, 'registry-osm.json'))), ...(await read(path.join(RAW, 'registry-osm-roads.json'))), ...(await read(path.join(RAW, 'registry-deer-zones.json')))];
 const meta = await read(path.join(ROOT, 'public/data/terrain-meta.json'));
 const pdfStat = await fs.stat(path.join(RAW, '2026_27_Black_Warrior_WMA_permit.pdf'));
 
 const manual = [
   { id: 'adcnr-bw-wma-2026-27', agency: 'Alabama DCNR – WFF', title: '2026-27 Black Warrior WMA map & AREA permit (season dates, bag limits, Zone A/B map, rules)', url: 'https://www.outdooralabama.com/sites/default/files/PDF%20documents/WMA%20Mamps/2026-2027/2026_27_D1%20Black%20Warrior%20WMA%20ADA.pdf', coverage: 'Black Warrior WMA, Sept 2026 – Aug 2027', updated: '2026-27 edition', retrieved: pdfStat.mtime.toISOString(), resolution: 'Document; transcribed into src/engine/regulations.ts', usage: 'Official regulation document', quality: 'verified (manual transcription)' },
+  { id: 'adcnr-deer-season-2026-27', agency: 'Alabama DCNR – WFF', title: '2026-27 statewide deer seasons by zone (public-land columns used for National Forest land outside the WMA)', url: 'https://www.outdooralabama.com/seasons-and-bag-limits/deer-season', coverage: 'Statewide; Zones C and D used here', updated: '2026-27', retrieved: '2026-10-25', resolution: 'Document; transcribed into src/engine/regulations.ts', usage: 'Official regulation page (zone map image labelled Proposed)', quality: 'verified (manual transcription)' },
   { id: 'al-admin-code-220-2-56', agency: 'Alabama Legislature', title: 'Alabama Administrative Code 220-2-.56 (WMA seasons)', url: 'https://admincode.legislature.state.al.us/administrative-code/220-2-.56', coverage: 'Statewide WMAs', updated: null, retrieved: null, resolution: 'Document', usage: 'Governing rule – linked, not machine-parsed', quality: 'reference link' },
   { id: 'adcnr-wma-rules', agency: 'Alabama DCNR', title: 'WMA Regulation 220-2-.55 (complete WMA rules)', url: 'https://www.outdooralabama.com/WMARules', coverage: 'Statewide WMAs', updated: null, retrieved: null, resolution: 'Document', usage: 'Governing rule – linked, not machine-parsed', quality: 'reference link' },
   { id: 'open-meteo', agency: 'Open-Meteo.com', title: 'Open-Meteo Forecast API (hourly/daily; NOAA GFS/HRRR blend for CONUS)', url: 'https://open-meteo.com/en/docs', coverage: 'Point forecast, 8 days + 1 past day', updated: 'live (hourly model runs)', retrieved: 'at runtime — age shown in app', resolution: '~3–13 km model grid', usage: 'CC BY 4.0, free non-commercial tier', quality: 'live' },

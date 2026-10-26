@@ -4,14 +4,14 @@
     "agency": "OpenStreetMap contributors (ODbL)",
     "title": "State highway centerlines (AL 33, AL 195, AL 36)",
     "url": "https://overpass-api.de/api/interpreter",
-    "query": "[out:json][timeout:60];way[\"highway\"][\"ref\"~\"^(AL|SR) ?(33|195|36)$\"](34.2,-87.56,34.47,-87.2);out geom;",
-    "coverage": "bbox -87.56,34.2,-87.2,34.47",
-    "retrieved": "2026-10-25T03:08:16.637Z",
+    "query": "[out:json][timeout:60];way[\"highway\"][\"ref\"~\"^(AL|SR) ?(33|195|36)$\"](33.96,-87.66,34.5,-87.08);out geom;",
+    "coverage": "bbox -87.66,33.96,-87.08,34.5",
+    "retrieved": "2026-10-26T03:42:22.437Z",
     "resolution": "Vector; community-mapped centerlines",
     "usage": "ODbL – attribution required",
     "quality": "retrieved",
-    "featureCount": 9,
-    "checksum": "2fb2e87ef51f3cc2",
+    "featureCount": 20,
+    "checksum": "5da17687ad8bd7eb",
     "file": "data/highways.geojson"
   }
 ]

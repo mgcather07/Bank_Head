@@ -1,0 +1,27 @@
+[
+  {
+    "id": "derived-deer-zone-d",
+    "agency": "Derived (Rehtac) from ADCNR text + OSM + ADCNR counties",
+    "title": "Alabama Deer Zone D boundary (2026-27), reconstructed from the official boundary description",
+    "url": "https://www.outdooralabama.com/seasons-and-bag-limits/deer-season",
+    "coverage": "region -87.85,33.85,-86.9,34.6",
+    "retrieved": "2026-10-26T03:43:09.778Z",
+    "resolution": "~55 m raster, 14 boundary elements",
+    "usage": "Derived; ADCNR publishes no zone GIS. Points within 400 m of the line are treated as zone-uncertain.",
+    "quality": "derived (validated: Double Springs/Houston/Grayson in D; Jasper/Cullman/Russellville out)",
+    "checksum": "7f51d837bcf2dde3",
+    "file": "data/deer-zone-d.geojson"
+  },
+  {
+    "id": "adcnr-counties",
+    "agency": "Alabama DCNR",
+    "title": "Alabama county boundaries",
+    "url": "https://conservationgis.alabama.gov/adcnrweb/rest/services/AlabamaCounties/MapServer/0",
+    "coverage": "region -87.85,33.85,-86.9,34.6",
+    "retrieved": "2026-10-26T03:43:09.780Z",
+    "resolution": "Vector",
+    "usage": "Public agency data",
+    "quality": "retrieved",
+    "file": "data/counties.geojson"
+  }
+]
