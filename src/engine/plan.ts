@@ -6,6 +6,7 @@ import type { PeakTimeline } from './peak';
 import { compass, downwindBearing, exposure, angleDiff } from './wind';
 import { fmtTime, sunDay, sessionWindows } from './time';
 import { weaponLabel } from './regulations';
+import { roadDistance } from './roads';
 
 export interface PlanStep { key: string; title: string; lines: string[]; tone?: 'good' | 'warn' | 'bad' }
 export interface HuntPlan { verdict: { label: string; tone: 'good' | 'warn' | 'bad'; why: string }; steps: PlanStep[] }
@@ -44,12 +45,27 @@ export const SETUP_OFFSET_M = 55; // ≈ 60 yd
  * drifts away from where deer should travel. Without a forecast, it falls on the side away from bedding cover.
  * This is a starting point to scout from, not a verified tree.
  */
-export function setupPoint(rec: HuntRecommendation): { coord: [number, number]; bearing: number; distanceM: number; basis: 'wind' | 'bedding' } | null {
+export const SETUP_ROAD_CLEARANCE_M = 50;
+
+export function setupPoint(rec: HuntRecommendation): { coord: [number, number]; bearing: number; distanceM: number; basis: 'wind' | 'bedding'; adjusted: boolean; roadM: number } | null {
   const w = rec.windAssessment;
   const p = rec.candidate;
-  if (w.scentDownwindDegrees != null && w.risk !== 'unknown') return { coord: offsetPoint(p.center, w.scentDownwindDegrees, SETUP_OFFSET_M), bearing: w.scentDownwindDegrees, distanceM: SETUP_OFFSET_M, basis: 'wind' };
-  if (p.beddingCoverBearing != null) { const b = (p.beddingCoverBearing + 180) % 360; return { coord: offsetPoint(p.center, b, SETUP_OFFSET_M), bearing: b, distanceM: SETUP_OFFSET_M, basis: 'bedding' }; }
-  return null;
+  let bearing: number, basis: 'wind' | 'bedding';
+  if (w.scentDownwindDegrees != null && w.risk !== 'unknown') { bearing = w.scentDownwindDegrees; basis = 'wind'; }
+  else if (p.beddingCoverBearing != null) { bearing = (p.beddingCoverBearing + 180) % 360; basis = 'bedding'; }
+  else return null;
+  // Stay off roads: try the ideal spot first, then swing up to ±60° and 40–80 m until it is ≥ 50 m from any road.
+  let best: { coord: [number, number]; bearing: number; distanceM: number; roadM: number } | null = null;
+  for (const turn of [0, 20, -20, 40, -40, 60, -60]) {
+    for (const dist of [SETUP_OFFSET_M, 75, 40]) {
+      const b = (bearing + turn + 360) % 360;
+      const coord = offsetPoint(p.center, b, dist);
+      const roadM = roadDistance(coord, 300);
+      if (roadM >= SETUP_ROAD_CLEARANCE_M) return { coord, bearing: b, distanceM: dist, basis, adjusted: turn !== 0 || dist !== SETUP_OFFSET_M, roadM };
+      if (!best || roadM > best.roadM) best = { coord, bearing: b, distanceM: dist, roadM };
+    }
+  }
+  return { ...best!, basis, adjusted: true };
 }
 
 /** Walking time: 2.5 mph on road/trail, 1.2 mph off-trail, +1 min per 10 m of climb. */
@@ -71,7 +87,9 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   // weakest meaningful factor (ignore the 5% evidence slot and boilerplate caveats)
   const weakest = [...rec.components].filter((c) => c.weight >= 0.1).sort((a, b) => a.value - b.value)[0];
   const weakNote = weakest.negatives.find((n) => !/data unavailable|not verified|secondary source|No verified deer sign/i.test(n)) ?? weakest.negatives[0];
+  const centerRoadM = roadDistance(p.center, 300);
   if (rec.legalStatus === 'verified_prohibited') verdict = { label: "Don't hunt here on this date", tone: 'bad', why: rec.legal.summary };
+  else if (centerRoadM < 40) verdict = { label: 'On or next to a road — move off it', tone: 'bad', why: `This point is ${Math.round(centerRoadM)} m from a road. You can't hunt from or across a public road, and deer avoid road traffic. Check a spot at least 100 m off the road.` };
   else if (rec.legalStatus === 'requires_verification') verdict = { label: 'Check the regulations first', tone: 'warn', why: rec.legal.summary };
   else if ((rec.score ?? 0) >= 70 && w.risk !== 'high') verdict = { label: `Good ${rec.session} sit`, tone: 'good', why: rec.reasons[0] ?? 'Terrain, wind and timing line up.' };
   else if (w.risk === 'high') verdict = { label: 'Wrong wind for this spot right now', tone: 'bad', why: w.notes[w.notes.length - 1] ?? 'Forecast wind carries scent toward where deer are expected.' };
@@ -112,7 +130,8 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   // ---- setup ----
   const setup: string[] = [];
   const sp = setupPoint(rec);
-  if (sp?.basis === 'wind') setup.push(`Red ✕ on the map (${sp.coord[1].toFixed(5)}, ${sp.coord[0].toFixed(5)}): set up about 60 yards ${compass(sp.bearing)} of the center so the ${compass(w.windFromDegrees)} wind carries your scent away from where deer should pass.`);
+  if (sp && sp.roadM < SETUP_ROAD_CLEARANCE_M) setup.push(`⚠ A road runs within ${Math.round(sp.roadM)} m of every downwind setup here. You can't hunt from or across a public road — pick a tree well off it, or choose another zone.`);
+  if (sp?.basis === 'wind') setup.push(`Red ✕ on the map (${sp.coord[1].toFixed(5)}, ${sp.coord[0].toFixed(5)}): set up about ${Math.round(sp.distanceM * 1.094)} yards ${compass(sp.bearing)} of the center so the ${compass(w.windFromDegrees)} wind carries your scent away from where deer should pass${sp.adjusted ? ' (shifted to stay clear of a road)' : ''}.`);
   else if (sp) setup.push(`Red ✕ on the map (${sp.coord[1].toFixed(5)}, ${sp.coord[0].toFixed(5)}): about 60 yards ${compass(sp.bearing)} of the center, on the side away from bedding cover. No wind forecast yet — re-check the morning of the hunt.`);
   if (p.beddingCoverBearing != null && p.foodWaterBearing != null && angleDiff(p.beddingCoverBearing, p.foodWaterBearing) > 60) setup.push(`Expect movement between the ${compass(p.beddingCoverBearing)} (bedding cover) and the ${compass(p.foodWaterBearing)} (bottoms/food); ${rec.session === 'morning' ? 'deer heading back toward bedding' : 'deer leaving bedding'} should cross near the spot.`);
   else if (p.beddingCoverBearing != null) setup.push(`Likely bedding cover is to the ${compass(p.beddingCoverBearing)} — face that way and keep your scent off it.`);

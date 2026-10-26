@@ -6,7 +6,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 const RAW = path.join(ROOT, 'research', 'raw');
 const read = async (f) => JSON.parse(await fs.readFile(f, 'utf8'));
 const boundaries = await read(path.join(RAW, 'registry-boundaries.json'));
-const osm = await read(path.join(RAW, 'registry-osm.json'));
+const osm = [...(await read(path.join(RAW, 'registry-osm.json'))), ...(await read(path.join(RAW, 'registry-osm-roads.json')))];
 const meta = await read(path.join(ROOT, 'public/data/terrain-meta.json'));
 const pdfStat = await fs.stat(path.join(RAW, '2026_27_Black_Warrior_WMA_permit.pdf'));
 

@@ -9,6 +9,7 @@ import { downloadText, gpxToPins, makeBackup, mergeById, parseBackup, pinsToGpx 
 import { getNormals, getPastDay, type Normals } from './engine/climate';
 import { analyzeSpot, buildWalkNetwork, loadGrid, type WalkNetwork } from './engine/spot';
 import { buildHuntPlan, setupPoint } from './engine/plan';
+import { buildRoadIndex, setRoadIndex } from './engine/roads';
 import type { Candidate } from './engine/types';
 import { TabBar, TabIcon } from './components/TabBar';
 import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, WeatherBundle } from './engine/types';
@@ -103,6 +104,7 @@ export default function App() {
 
   useEffect(() => {
     loadData().then((d) => {
+      setRoadIndex(buildRoadIndex(d.fsRoads, d.highways, d.osmRoads));
       setData(d);
       // ?zone=BH-..&date=YYYY-MM-DD&session=evening — shared link opens that zone
       const q = new URLSearchParams(window.location.search);

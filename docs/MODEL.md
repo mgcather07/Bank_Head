@@ -22,6 +22,7 @@ Each feature's connected cells become a scouting polygon: a convex hull of the c
 - inside the ADCNR WMA polygon, excluding holes
 - on USFS-owned land
 - more than 400 m from recreation sites
+- no road crossing the zone outline, and the zone center at least 100 m from any road. "Road" means the USFS road inventory, state highways and every OpenStreetMap motor road or track; the OSM layer adds the county and private roads the Forest Service data misses.
 
 Candidates are then de-duplicated within 400 m. Context within 300 m covers feature convergence, LANDFIRE habitat fractions, oak types and edge density. Within 600 m the pipeline derives two **hypothesis** bearings:
 - **Bedding cover:** upper, moderately steep, forested cells
@@ -71,3 +72,5 @@ A tapped point is scored with the same terrain/habitat formula as the generated 
 ## Hunt this spot plan
 
 Built from the evaluation itself. **Huntable winds** are the 16 compass directions whose downwind bearing keeps exposure to the bedding side (weight 1) and food side (0.6–0.75) under 0.3. Walk time assumes 2.5 mph on roads/trails, 1.2 mph off-trail and 1 min per 10 m of climb.
+
+The red ✕ setup point is about 60 yd downwind of the zone center. If that spot is within 50 m of any road, it swings up to ±60° and 40–80 m until it is clear, and the plan says it was shifted. A checked spot within 40 m of a road gets the verdict "On or next to a road — move off it".

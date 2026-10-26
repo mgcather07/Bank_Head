@@ -14,6 +14,7 @@
 | Recreation sites (trailhead, hunt camp, etc.) | USFS `EDW_InfraRecreationSites_01` | Retrieved |
 | WMA checking station | ADCNR `CheckingStations/MapServer/0` | Retrieved |
 | AL 33 centerline (Zone A/B divider) | OpenStreetMap via Overpass | Retrieved (ODbL) |
+| All motor roads and tracks (982 ways) | OpenStreetMap via Overpass (`scripts/fetch-osm-roads.mjs`) | Retrieved (ODbL). Used only to keep zones and setup points off roads, not for routing or parking. |
 | DEM, 1 arc-second (about 26×31 m) | USGS 3DEP ImageServer `exportImage` | Retrieved |
 | Existing Vegetation Type, 30 m | LANDFIRE LF2024 EVT ImageServer and EVT CSV | Retrieved |
 | Fuel disturbance (type, severity, age ≤10 yr), 30 m | LANDFIRE LF2024 FDist ImageServer and CSV | Retrieved. Shows burns on 126 candidate zones. |

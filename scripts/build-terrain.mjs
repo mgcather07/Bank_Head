@@ -298,6 +298,7 @@ const recSites = await readGeo('rec-sites.geojson');
 const fsRoads = await readGeo('fs-roads.geojson');
 const highways = await readGeo('highways.geojson');
 const trails = await readGeo('trails.geojson');
+const osmRoads = await readGeo('roads-osm.geojson');
 const checkStations = await readGeo('check-stations.geojson');
 const fsOwned = own.features.filter((f) => f.properties.ownerclassification === 'USDA FOREST SERVICE');
 
@@ -350,7 +351,14 @@ function zoneFor(pt) {
 }
 
 const flatLines = (fc) => fc.features.flatMap((f) => (f.geometry.type === 'MultiLineString' ? f.geometry.coordinates.map((c) => turf.lineString(c)) : [f]));
-const trailLines = flatLines(trails), roadLines = [...flatLines(fsRoads), ...flatLines(highways)];
+const trailLines = flatLines(trails), roadLines = [...flatLines(fsRoads), ...flatLines(highways), ...flatLines(osmRoads)];
+const roadBboxes = roadLines.map((l) => turf.bbox(l));
+const ROAD_CLEARANCE_M = 100; // zone centre must be at least this far from any road
+// any road (FS inventory, state highway or OSM road/track) crossing the polygon disqualifies the zone
+const roadCrosses = (poly) => {
+  const pb = turf.bbox(poly);
+  return roadLines.some((l, k) => { const b = roadBboxes[k]; return !(b[0] > pb[2] || b[2] < pb[0] || b[1] > pb[3] || b[3] < pb[1]) && turf.booleanIntersects(l, poly); });
+};
 const inAny = (pt, fc) => fc.some((f) => turf.booleanPointInPolygon(pt, f));
 
 // ---------- candidate extraction ----------
@@ -402,7 +410,7 @@ const circMean = (angles) => {
 const ASPECT_NAMES = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
 const raw = [];
-const rejected = { outsideWma: 0, notFsOwned: 0, safetyBuffer: 0, tooLarge: 0 };
+const rejected = { outsideWma: 0, notFsOwned: 0, safetyBuffer: 0, nearRoad: 0, roadCrosses: 0, tooLarge: 0 };
 for (const def of FEATURE_DEFS) {
   for (const cells of components(def.mask, def.min)) {
     // representative cell: the one nearest the component centroid
@@ -426,6 +434,7 @@ for (const r of raw) {
   if (!inAny(pt, fsOwned)) { rejected.notFsOwned++; continue; }
   const nearRec = recSites.features.some((f) => turf.distance(pt, f, { units: "meters" }) < 400);
   if (nearRec) { rejected.safetyBuffer++; continue; }
+  if (Math.min(...roadLines.map((l) => turf.pointToLineDistance(pt, l, { units: 'meters' }))) < ROAD_CLEARANCE_M) { rejected.nearRoad++; continue; }
 
   // context within 300 m
   const counts = { saddle: 0, bench: 0, spur: 0, bottom: 0, draw: 0, steep: 0, stream: 0, ridge: 0 };
@@ -538,6 +547,7 @@ for (const r of raw) {
   const pts = turf.featureCollection(near.map((c) => turf.point([lonOf(c % W), latOf((c / W) | 0)])));
   let geom = near.length >= 3 ? turf.convex(pts) : null;
   geom = turf.buffer(geom ?? pt, 60, { units: 'meters' });
+  if (roadCrosses(geom)) { rejected.roadCrosses++; continue; }
   const areaHa = turf.area(geom) / 1e4;
 
   candidates.push({
@@ -681,7 +691,7 @@ const meta = {
   generated: new Date().toISOString(),
   bbox: BBOX,
   grid: { width: W, height: H, cellDeg: DEG, approxCellM: [Math.round(dxAt(H / 2)), Math.round(DY)] },
-  parameters: { tpiSmallRadiusCells: 5, tpiLargeRadiusCells: 25, streamThresholdKm2: STREAM_KM2, saddleHessianBaselineCells: K, dedupeMeters: 400, contextRadiusM: 300, recSiteSafetyBufferM: 400, zoneDividerUncertaintyM: 400 },
+  parameters: { tpiSmallRadiusCells: 5, tpiLargeRadiusCells: 25, streamThresholdKm2: STREAM_KM2, saddleHessianBaselineCells: K, dedupeMeters: 400, contextRadiusM: 300, recSiteSafetyBufferM: 400, roadClearanceM: ROAD_CLEARANCE_M, zoneDividerUncertaintyM: 400 },
   counts: { networkNodes: net.nodes.length, raw: raw.length, rejected, mergedDuplicates: merged, candidates: features.length, byType: Object.fromEntries(FEATURE_DEFS.map((d) => [d.type, features.filter((f) => f.properties.type === d.type).length])), accessPoints: accessPoints.length, streams: streamLines.length },
   sources,
 };

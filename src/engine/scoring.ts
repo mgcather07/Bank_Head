@@ -190,6 +190,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   if (wind.risk === 'high') { score = Math.min(score, 45); warnings.push('Severe wind mismatch for this session — score capped.'); }
   if (route && route.walkMeters > prefs.maxWalkMeters) warnings.push('Walk exceeds your maximum walking distance.');
   if (legal.status !== 'verified_allowed') warnings.push(legal.summary);
+  if (p.type === 'spot' && p.distRoadM < 100) warnings.push(`Road ${p.distRoadM} m away — you can't hunt from or across a public road; set up well off it.`);
   if (p.wilderness) warnings.push('Sipsey Wilderness — no motorized/mechanized equipment (incl. game carts); pack-in/pack-out.');
   if (prefs.stand === 'climber' || prefs.stand === 'hang_on' || prefs.stand === 'saddle') warnings.push('Tree suitability cannot be verified remotely — inspect trees on site; full-body harness and tether required (WMA rule).');
   if (sun && Date.now() > win.end && date === localDate()) warnings.push('This session has already ended today.');

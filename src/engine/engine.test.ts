@@ -17,6 +17,8 @@ import { analyzeSpot, buildWalkNetwork, parseGrid, routeToSpot, type TerrainGrid
 import { buildHuntPlan, huntableWinds, walkMinutes, setupPoint } from './plan';
 import { bearingTo, haversine } from './geography';
 import zlib from 'node:zlib';
+import * as turf from '@turf/turf';
+import { buildRoadIndex, roadDistance, setRoadIndex } from './roads';
 
 const DATA = path.resolve(__dirname, '../../public/data');
 const read = (f: string) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
@@ -25,6 +27,7 @@ let candidates: Candidate[];
 beforeAll(() => {
   layers = { wma: read('wma.geojson'), nfAdmin: read('nf-admin.geojson'), ownership: read('ownership.geojson'), wilderness: read('wilderness.geojson'), highways: read('highways.geojson') };
   candidates = read('candidates.geojson').features.map((f: Candidate) => ({ geometry: f.geometry, properties: f.properties }));
+  setRoadIndex(buildRoadIndex(read('fs-roads.geojson'), read('highways.geojson'), read('roads-osm.geojson')));
 });
 
 // ---------------- Geographic validity ----------------
@@ -490,5 +493,37 @@ describe('setup point (red X)', () => {
     const sp = setupPoint(evaluateCandidate(c, 'evening', { prefs, weather: null, pins: [] }))!;
     expect(sp.basis).toBe('bedding');
     expect(angleDiff(bearingTo(c.properties.center, sp.coord), (c.properties.beddingCoverBearing! + 180) % 360)).toBeLessThan(2);
+  });
+});
+
+describe('roads', () => {
+  it('no road (FS, highway or OSM road/track) crosses any hunting zone', () => {
+    const lines = [...read('fs-roads.geojson').features, ...read('highways.geojson').features, ...read('roads-osm.geojson').features]
+      .flatMap((f: { geometry: { type: string; coordinates: number[][] | number[][][] }; properties: unknown }) => (f.geometry.type === 'MultiLineString' ? (f.geometry.coordinates as number[][][]).map((c) => turf.lineString(c)) : [turf.lineString(f.geometry.coordinates as number[][])]));
+    const boxes = lines.map((l: ReturnType<typeof turf.lineString>) => turf.bbox(l));
+    const crossed: string[] = [];
+    for (const c of candidates) {
+      const poly = turf.feature(c.geometry);
+      const pb = turf.bbox(poly);
+      if (lines.some((l: ReturnType<typeof turf.lineString>, k: number) => { const b = boxes[k]; return !(b[0] > pb[2] || b[2] < pb[0] || b[1] > pb[3] || b[3] < pb[1]) && turf.booleanIntersects(l, poly); })) crossed.push(c.properties.id);
+    }
+    expect(crossed).toEqual([]);
+  });
+  it('every zone center is at least 100 m from a road', () => {
+    const close = candidates.filter((c) => roadDistance(c.properties.center, 150) < 99).map((c) => c.properties.id);
+    expect(close).toEqual([]);
+  });
+  it('setup ✕ stays ≥ 50 m off roads for every wind direction', () => {
+    const prefs = { date: '2026-10-25', session: 'compare' as const, weapon: 'bow' as const, target: 'any' as const, maxWalkMeters: 4000, stand: 'climber' as const, effort: 'balanced' as const, youthHunter: false, start: null };
+    const bad: string[] = [];
+    for (const c of candidates.filter((_, i) => i % 5 === 0)) {
+      const sun = sunDay('2026-10-25', c.properties.center[0], c.properties.center[1]);
+      for (let from = 0; from < 360; from += 45) {
+        const weather = { source: 'open-meteo' as const, model: 't', lat: 0, lon: 0, fetchedAt: Date.now(), fromCache: false, current: null, daily: [], hourly: Array.from({ length: 30 }, (_, i) => ({ time: sun.sunrise - 6 * 3600000 + i * 3600000, tempF: 55, feelsF: 55, humidity: 60, precipIn: 0, precipProb: 0, cloud: 20, pressureHpa: 1015, windMph: 8, windFrom: from, gustMph: 12, code: 0 })) };
+        const sp = setupPoint(evaluateCandidate(c, 'evening', { prefs, weather, pins: [] }));
+        if (sp && roadDistance(sp.coord, 300) < 50) bad.push(`${c.properties.id}@${from}`);
+      }
+    }
+    expect(bad).toEqual([]);
   });
 });

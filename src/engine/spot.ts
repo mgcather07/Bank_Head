@@ -4,6 +4,7 @@
 import type { FeatureCollection, LineString, MultiLineString, Point, Position } from 'geojson';
 import type { Candidate, CandidateProps, RouteOption } from './types';
 import { bearingTo, haversine, lookupJurisdiction, type Layers } from './geography';
+import { roadDistance } from './roads';
 
 export interface TerrainGrid {
   bbox: [number, number, number, number];
@@ -320,8 +321,8 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
   const landform = landformAt(g, c.i);
   const label = f0 ? `${f0.label}${featD > 40 ? ` (${Math.round(featD)} m away)` : ''}` : `Checked spot — ${landform}`;
   // distance to roads/trails: reuse the network nodes
-  let distRoad = Infinity;
-  if (net) for (const s of net.starts) distRoad = Math.min(distRoad, haversine(net.nodes[s.node], pt));
+  let distRoad = roadDistance(pt, 3000);
+  if (!Number.isFinite(distRoad) && net) for (const s of net.starts) distRoad = Math.min(distRoad, haversine(net.nodes[s.node], pt));
   const props: CandidateProps = {
     id: `SPOT-${++spotSeq}`,
     type: 'spot',

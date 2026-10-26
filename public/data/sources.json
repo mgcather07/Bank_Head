@@ -1,8 +1,8 @@
 {
-  "generated": "2026-10-25T17:35:19.381Z",
+  "generated": "2026-10-26T03:31:02.173Z",
   "terrain": {
     "algorithmVersion": "terrain-1.1.0",
-    "generated": "2026-10-25T17:35:19.292Z",
+    "generated": "2026-10-26T03:31:02.093Z",
     "parameters": {
       "tpiSmallRadiusCells": 5,
       "tpiLargeRadiusCells": 25,
@@ -11,6 +11,7 @@
       "dedupeMeters": 400,
       "contextRadiusM": 300,
       "recSiteSafetyBufferM": 400,
+      "roadClearanceM": 100,
       "zoneDividerUncertaintyM": 400
     },
     "counts": {
@@ -20,15 +21,17 @@
         "outsideWma": 497,
         "notFsOwned": 0,
         "safetyBuffer": 4,
+        "nearRoad": 44,
+        "roadCrosses": 8,
         "tooLarge": 0
       },
-      "mergedDuplicates": 389,
-      "candidates": 450,
+      "mergedDuplicates": 361,
+      "candidates": 426,
       "byType": {
-        "saddle": 72,
+        "saddle": 51,
         "bench": 92,
-        "spur": 250,
-        "bottom": 36
+        "spur": 249,
+        "bottom": 34
       },
       "accessPoints": 767,
       "streams": 897
@@ -218,6 +221,21 @@
       "featureCount": 9,
       "checksum": "2fb2e87ef51f3cc2",
       "file": "data/highways.geojson"
+    },
+    {
+      "id": "osm-roads",
+      "agency": "OpenStreetMap contributors (ODbL)",
+      "title": "All motor roads and tracks (used to keep zones and setups off roads)",
+      "url": "https://overpass-api.de/api/interpreter",
+      "query": "[out:json][timeout:120];way[\"highway\"~\"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track|road|living_street)$\"](34.2,-87.56,34.47,-87.2);out geom;",
+      "coverage": "bbox -87.56,34.2,-87.2,34.47",
+      "retrieved": "2026-10-26T03:27:56.328Z",
+      "resolution": "Vector; community-mapped centerlines",
+      "usage": "ODbL – attribution required",
+      "quality": "retrieved",
+      "featureCount": 982,
+      "checksum": "753e6d70aecb2d4c",
+      "file": "data/roads-osm.geojson"
     },
     {
       "id": "usgs-3dep-dem",

@@ -36,6 +36,7 @@ export interface AppData extends Layers {
   streams: FeatureCollection<LineString>;
   contours: FeatureCollection<LineString>;
   fuelTreatments: FeatureCollection<Polygon | MultiPolygon>;
+  osmRoads: FeatureCollection<LineString | MultiLineString>;
   registry: SourceRegistry;
 }
 
@@ -46,7 +47,7 @@ async function j<T>(file: string): Promise<T> {
 }
 
 export async function loadData(): Promise<AppData> {
-  const [wma, nfAdmin, ownership, wilderness, highways, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments] = await Promise.all([
+  const [wma, nfAdmin, ownership, wilderness, highways, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments, osmRoads] = await Promise.all([
     j<Layers['wma']>('wma.geojson'),
     j<Layers['nfAdmin']>('nf-admin.geojson'),
     j<Layers['ownership']>('ownership.geojson'),
@@ -62,7 +63,8 @@ export async function loadData(): Promise<AppData> {
     j<AppData['contours']>('contours.geojson'),
     j<SourceRegistry>('sources.json'),
     j<AppData['fuelTreatments']>('fuel-treatments.geojson'),
+    j<AppData['osmRoads']>('roads-osm.geojson'),
   ]);
   const candidates: Candidate[] = candidatesFc.features.map((f) => ({ geometry: f.geometry, properties: f.properties }));
-  return { wma, nfAdmin, ownership, wilderness, highways, candidates, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments };
+  return { wma, nfAdmin, ownership, wilderness, highways, candidates, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments, osmRoads };
 }
