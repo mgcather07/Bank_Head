@@ -272,6 +272,7 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
       <p className="small">{rec.landJurisdiction} · {fmtDate(rec.huntDate, { weekday: 'short', month: 'short', day: 'numeric' })} · {SESSION_LABEL[rec.session]} {rec.recommendedWindow?.start}–{rec.recommendedWindow?.end} · {weaponLabel(rec.method)}</p>
       <div className="row tags"><LegalBadge status={rec.legalStatus} /><ConfidenceTag c={rec.confidence} /></div>
       <p className="small coords">📍 {p.center[1].toFixed(5)}, {p.center[0].toFixed(5)} · {p.areaHa} ha scouting zone · {Math.round(p.elevationM * 3.28)} ft</p>
+      {(() => { const sd = sunDay(rec.huntDate, p.center[0], p.center[1]); return <div className="sun-row small"><span>☀↑ Sunrise <b>{fmtTime(sd.sunrise)}</b></span><span>☀↓ Sunset <b>{fmtTime(sd.sunset)}</b></span><span className="muted">Legal {fmtTime(sd.legalStart)}–{fmtTime(sd.legalEnd)}</span></div>; })()}
       <div className="row wrap">
         <button className="btn btn-primary" onClick={onNavigate}>Navigate to access</button>
         <button className="btn" onClick={onSave} disabled={saved}>{saved ? '★ Saved' : '☆ Save zone'}</button>

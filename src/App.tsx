@@ -1,18 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MLMap } from 'maplibre-gl';
 import { loadData, type AppData } from './data';
-import { MapView, type BaseMap, type LayerToggles } from './components/MapView';
+import { MapView, type BaseMap, type LayerToggles, type SetupMarker, type ZoneTypeFilter } from './components/MapView';
 import { BackupPanel, HuntForm, InspectCard, JournalPanel, OfflinePanel, Outlook, PeekBar, RecCard, RecDetail, ScorePill, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
 import { CompassView } from './components/Compass';
 import { cachedTileCount, downloadArea, removeArea, tilesFor, type SavedArea } from './engine/offline';
 import { downloadText, gpxToPins, makeBackup, mergeById, parseBackup, pinsToGpx } from './engine/backup';
 import { getNormals, getPastDay, type Normals } from './engine/climate';
 import { analyzeSpot, buildWalkNetwork, loadGrid, type WalkNetwork } from './engine/spot';
-import { buildHuntPlan } from './engine/plan';
+import { buildHuntPlan, setupPoint } from './engine/plan';
 import type { Candidate } from './engine/types';
 import { TabBar, TabIcon } from './components/TabBar';
 import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, WeatherBundle } from './engine/types';
-import { addDays, BANKHEAD_CENTER, fmtDate, localDate, sessionWindows, sunDay } from './engine/time';
+import { addDays, BANKHEAD_CENTER, fmtDate, fmtTime, localDate, sessionWindows, sunDay } from './engine/time';
 import { getAlerts, getWeather, hoursBetween } from './engine/weather';
 import { evaluateCandidate, rankCandidates, sessionsFor } from './engine/scoring';
 import { lookupJurisdiction } from './engine/geography';
@@ -38,6 +38,7 @@ export default function App() {
   const prefs = useMemo(() => (storedPrefs.date < localDate() ? { ...storedPrefs, date: localDate() } : storedPrefs), [storedPrefs]);
   const [base, setBase] = usePersisted<BaseMap>('bh.base.v1', 'topo');
   const [layers, setLayers] = usePersisted<LayerToggles>('bh.layers.v1', DEFAULT_LAYERS);
+  const [typeFilter, setTypeFilter] = usePersisted<ZoneTypeFilter>('bh.typeFilter.v1', 'all');
   const [weather, setWeather] = useState<WeatherBundle | null>(null);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
@@ -155,9 +156,9 @@ export default function App() {
   const recs = useMemo(() => {
     if (!ranked) return [];
     const seen = new Set<string>();
-    return wanted.flatMap((s) => ranked.bySession[s]).sort((a, b) => (a.legalStatus === b.legalStatus ? (b.score ?? -1) - (a.score ?? -1) : a.legalStatus === 'verified_allowed' ? -1 : 1)).filter((r) => (seen.has(r.areaId) ? false : (seen.add(r.areaId), true))).slice(0, 5);
+    return wanted.flatMap((s) => ranked.bySession[s]).filter((r) => typeFilter === 'all' || r.candidate.type === typeFilter).sort((a, b) => (a.legalStatus === b.legalStatus ? (b.score ?? -1) - (a.score ?? -1) : a.legalStatus === 'verified_allowed' ? -1 : 1)).filter((r) => (seen.has(r.areaId) ? false : (seen.add(r.areaId), true))).slice(0, 5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ranked, prefs.session]);
+  }, [ranked, prefs.session, typeFilter]);
   const ratings = useMemo(() => ({ morning: ranked?.bySession.morning[0] ?? null, midday: ranked?.bySession.midday[0] ?? null, evening: ranked?.bySession.evening[0] ?? null }), [ranked]);
 
   const mapScores = useMemo(() => {
@@ -207,6 +208,18 @@ export default function App() {
     return buildHuntPlan(selected, timeline, upcoming);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, timeline]);
+  // red ✕ setup markers: the selected zone (large, labelled) plus the visible top areas
+  const setups = useMemo<SetupMarker[]>(() => {
+    const out: SetupMarker[] = [];
+    const add = (r: HuntRecommendation, primary: boolean) => {
+      if (r.legalStatus === 'verified_prohibited') return;
+      const sp = setupPoint(r);
+      if (sp && !out.some((m) => m.id === r.areaId)) out.push({ id: r.areaId, coord: sp.coord, primary, label: r.candidate.label });
+    };
+    if (selected) add(selected, true);
+    if (!selected || view !== 'map') recs.forEach((r) => add(r, false));
+    return out;
+  }, [selected, recs, view]);
   const sun = useMemo(() => sunDay(prefs.date, wxPoint[0], wxPoint[1]), [prefs.date, wxKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const windHour = useMemo(() => {
     if (!selected) return null;
@@ -409,7 +422,19 @@ export default function App() {
         <div className="brand"><span className="logo">◭</span><div><b className="brand-name">BANKHEAD HUNT INTELLIGENCE</b><b className="page-title">{PAGE_TITLE[view]}</b><div className="tiny muted">{fmtDate(localDate())}{!online && ' · OFFLINE — cached data'}</div></div></div>
         {!standalone && (installEvt || isIOS) && <button className="btn small install-btn" onClick={onInstall}>⤓ Install</button>}
       </header>
-      <MapView data={data} base={base} layers={layers} scores={mapScores} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
+      <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
+      <div className="map-top">
+        <div className="sun-chip" aria-label="Sunrise and sunset">
+          <span>☀↑ <b>{fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).sunrise)}</b></span>
+          <span>☀↓ <b>{fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).sunset)}</b></span>
+          <span className="muted">legal {fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).legalStart)}–{fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).legalEnd)}</span>
+        </div>
+        <div className="type-chips" role="radiogroup" aria-label="Filter hunting areas by terrain type">
+          {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
+            <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => c.properties.type === t).length}</small> : null}</button>
+          ))}
+        </div>
+      </div>
       <div className="map-tools">
         <button className="btn fab" onClick={() => setShowLayers(!showLayers)} aria-expanded={showLayers}>Layers</button>
         <button className="btn fab" onClick={onGps} aria-label="Locate me">◎</button>
@@ -458,6 +483,7 @@ export default function App() {
                 <div className="grow mini-text"><b>{selected.candidate.label}</b> <span className="muted">{selected.areaId}</span><div className="tiny muted">{selected.landJurisdiction} · best {selected.session} · wind risk {selected.windAssessment.risk}</div></div>
                 <button className="btn btn-ghost small" aria-label="Clear selection" onClick={() => setSelectedKey(null)}>✕</button>
               </div>
+              <div className="tiny muted mini-sun">☀↑ {fmtTime(timeline?.sun.sunrise)} · ☀↓ {fmtTime(timeline?.sun.sunset)} · <span className="setup-key">✕</span> = set up here</div>
               {timeline?.peaks[0] && <div className="tiny mini-peak">★ Peak {new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(timeline.peaks[0].start)}–{new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hour: 'numeric', minute: '2-digit' }).format(timeline.peaks[0].end)}</div>}
               <div className="row mini-actions">
                 <button className="btn btn-primary" onClick={() => { switchTab('hunt'); }}>Details</button>
@@ -527,7 +553,12 @@ export default function App() {
                   <SettingsBar prefs={prefs} onOpen={() => setShowForm(true)} />
                   <TodayCard date={prefs.date} sun={sun} weather={weather} weatherError={weatherError} alerts={alerts} alertsError={alertsError} ratings={ratings} onRefresh={() => refreshWeather(true)} refreshing={refreshing} selected={null} windHourIdx={windHourIdx} setWindHourIdx={setWindHourIdx} />
                   <section className="card">
-                    <h2>Top hunting areas</h2>
+                    <h2>Top hunting areas{typeFilter !== 'all' && <span className="muted"> · {({ saddle: 'saddles', bench: 'benches', spur: 'spurs', bottom: 'creek bottoms' } as Record<string, string>)[typeFilter]} only</span>}</h2>
+                    <div className="type-chips inline" role="radiogroup" aria-label="Filter by terrain type">
+                      {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
+                        <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}</button>
+                      ))}
+                    </div>
                     <p className="tiny muted">{fmtDate(prefs.date, { weekday: 'short', month: 'short', day: 'numeric' })} · {prefs.session === 'compare' || prefs.session === 'all' ? 'all sessions' : prefs.session} · ranked among {data?.candidates.length ?? '…'} terrain-derived zones. {ex && `${ex.prohibited ? `${ex.prohibited} zone-sessions excluded as not legal; ` : ''}${ex.overDistance ? `${ex.overDistance} beyond your walking limit.` : ''}`}</p>
                     {recs.length === 0 && data && <p className="warn small">No legally eligible zones match these settings. {evaluateLegal({ date: prefs.date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'A', youthHunter: prefs.youthHunter }).summary}</p>}
                     {recs.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} active={false} onOpen={() => openRec(r)} />)}

@@ -14,7 +14,8 @@ import { tilesFor, lon2x, lat2y } from './offline';
 import { mergeById, parseBackup, pinsToGpx } from './backup';
 import { normalFor, type Normals } from './climate';
 import { analyzeSpot, buildWalkNetwork, parseGrid, routeToSpot, type TerrainGrid, type WalkNetwork } from './spot';
-import { buildHuntPlan, huntableWinds, walkMinutes } from './plan';
+import { buildHuntPlan, huntableWinds, walkMinutes, setupPoint } from './plan';
+import { bearingTo, haversine } from './geography';
 import zlib from 'node:zlib';
 
 const DATA = path.resolve(__dirname, '../../public/data');
@@ -468,5 +469,26 @@ describe('hunt plan', () => {
     const youth = evaluateCandidate(candidates[0], 'morning', { prefs: { ...prefs, date: '2026-10-31' }, weather: null, pins: [] });
     expect(buildHuntPlan(youth, null).verdict.tone).toBe('bad');
     expect(buildHuntPlan(youth, null).verdict.label).toMatch(/Don't hunt/);
+  });
+});
+
+describe('setup point (red X)', () => {
+  const prefs = { date: '2026-10-25', session: 'compare' as const, weapon: 'bow' as const, target: 'any' as const, maxWalkMeters: 4000, stand: 'climber' as const, effort: 'balanced' as const, youthHunter: false, start: null };
+  it('lands ~55 m downwind of the zone center when there is a wind forecast', () => {
+    const c = candidates[3];
+    const sun = sunDay('2026-10-25', c.properties.center[0], c.properties.center[1]);
+    const weather = { source: 'open-meteo' as const, model: 't', lat: 0, lon: 0, fetchedAt: Date.now(), fromCache: false, current: null, daily: [], hourly: Array.from({ length: 30 }, (_, i) => ({ time: sun.sunrise - 6 * 3600000 + i * 3600000, tempF: 55, feelsF: 55, humidity: 60, precipIn: 0, precipProb: 0, cloud: 20, pressureHpa: 1015, windMph: 8, windFrom: 315, gustMph: 12, code: 0 })) };
+    const rec = evaluateCandidate(c, 'evening', { prefs, weather, pins: [] });
+    const sp = setupPoint(rec)!;
+    expect(sp.basis).toBe('wind');
+    expect(haversine(c.properties.center, sp.coord)).toBeGreaterThan(50);
+    expect(haversine(c.properties.center, sp.coord)).toBeLessThan(60);
+    expect(angleDiff(bearingTo(c.properties.center, sp.coord), 135)).toBeLessThan(2); // NW wind → set up SE
+  });
+  it('without a forecast it falls on the side away from bedding cover', () => {
+    const c = candidates.find((x) => x.properties.beddingCoverBearing != null)!;
+    const sp = setupPoint(evaluateCandidate(c, 'evening', { prefs, weather: null, pins: [] }))!;
+    expect(sp.basis).toBe('bedding');
+    expect(angleDiff(bearingTo(c.properties.center, sp.coord), (c.properties.beddingCoverBearing! + 180) % 360)).toBeLessThan(2);
   });
 });

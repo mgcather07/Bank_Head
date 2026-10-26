@@ -28,6 +28,30 @@ export function huntableWinds(p: Pick<CandidateProps, 'beddingCoverBearing' | 'f
   return { good, ok, bad };
 }
 
+/** Point `m` meters from `c` along `bearing` (spherical). */
+export function offsetPoint(c: [number, number], bearing: number, m: number): [number, number] {
+  const R = 6371008.8, br = (bearing * Math.PI) / 180, d = m / R;
+  const lat1 = (c[1] * Math.PI) / 180, lon1 = (c[0] * Math.PI) / 180;
+  const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(br));
+  const lon2 = lon1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2));
+  return [+((lon2 * 180) / Math.PI).toFixed(6), +((lat2 * 180) / Math.PI).toFixed(6)];
+}
+
+export const SETUP_OFFSET_M = 55; // ≈ 60 yd
+
+/**
+ * Suggested setup location (the red ✕): ~60 yd downwind of the zone centre for the session's forecast wind, so scent
+ * drifts away from where deer should travel. Without a forecast, it falls on the side away from bedding cover.
+ * This is a starting point to scout from, not a verified tree.
+ */
+export function setupPoint(rec: HuntRecommendation): { coord: [number, number]; bearing: number; distanceM: number; basis: 'wind' | 'bedding' } | null {
+  const w = rec.windAssessment;
+  const p = rec.candidate;
+  if (w.scentDownwindDegrees != null && w.risk !== 'unknown') return { coord: offsetPoint(p.center, w.scentDownwindDegrees, SETUP_OFFSET_M), bearing: w.scentDownwindDegrees, distanceM: SETUP_OFFSET_M, basis: 'wind' };
+  if (p.beddingCoverBearing != null) { const b = (p.beddingCoverBearing + 180) % 360; return { coord: offsetPoint(p.center, b, SETUP_OFFSET_M), bearing: b, distanceM: SETUP_OFFSET_M, basis: 'bedding' }; }
+  return null;
+}
+
 /** Walking time: 2.5 mph on road/trail, 1.2 mph off-trail, +1 min per 10 m of climb. */
 export function walkMinutes(onNetworkM: number, offTrailM: number, gainM: number) {
   return Math.round(onNetworkM / 67 + offTrailM / 32 + gainM / 10);
@@ -87,7 +111,9 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
 
   // ---- setup ----
   const setup: string[] = [];
-  if (w.scentDownwindDegrees != null) setup.push(`Set up 40–80 yards ${compass(w.scentDownwindDegrees)} of the spot so the ${compass(w.windFromDegrees)} wind carries your scent away from where deer should pass.`);
+  const sp = setupPoint(rec);
+  if (sp?.basis === 'wind') setup.push(`Red ✕ on the map (${sp.coord[1].toFixed(5)}, ${sp.coord[0].toFixed(5)}): set up about 60 yards ${compass(sp.bearing)} of the center so the ${compass(w.windFromDegrees)} wind carries your scent away from where deer should pass.`);
+  else if (sp) setup.push(`Red ✕ on the map (${sp.coord[1].toFixed(5)}, ${sp.coord[0].toFixed(5)}): about 60 yards ${compass(sp.bearing)} of the center, on the side away from bedding cover. No wind forecast yet — re-check the morning of the hunt.`);
   if (p.beddingCoverBearing != null && p.foodWaterBearing != null && angleDiff(p.beddingCoverBearing, p.foodWaterBearing) > 60) setup.push(`Expect movement between the ${compass(p.beddingCoverBearing)} (bedding cover) and the ${compass(p.foodWaterBearing)} (bottoms/food); ${rec.session === 'morning' ? 'deer heading back toward bedding' : 'deer leaving bedding'} should cross near the spot.`);
   else if (p.beddingCoverBearing != null) setup.push(`Likely bedding cover is to the ${compass(p.beddingCoverBearing)} — face that way and keep your scent off it.`);
   if (p.meanSlopeDeg > 18) setup.push(`Ground is steep (avg ${p.meanSlopeDeg}°). ${rec.method === 'rifle' || rec.method === 'muzzleloader' ? 'Look for a spot with a long view across the slope.' : 'A climber needs a straight tree on a level spot — a saddle or hang-on may be easier.'}`);

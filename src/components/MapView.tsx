@@ -64,6 +64,27 @@ export function scentCone(center: [number, number], downwind: number, lengthM = 
 
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
+export type ZoneTypeFilter = 'all' | 'saddle' | 'bench' | 'spur' | 'bottom';
+export interface SetupMarker { id: string; coord: [number, number]; primary: boolean; label: string }
+
+/** Red ✕ with a white halo, drawn once into the map's sprite. */
+function setupIcon(size = 40) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  const pad = size * 0.2;
+  g.lineCap = 'round';
+  for (const [color, w] of [['#ffffff', size * 0.26], ['#d81e1e', size * 0.15]] as const) {
+    g.strokeStyle = color;
+    g.lineWidth = w;
+    g.beginPath();
+    g.moveTo(pad, pad); g.lineTo(size - pad, size - pad);
+    g.moveTo(size - pad, pad); g.lineTo(pad, size - pad);
+    g.stroke();
+  }
+  return g.getImageData(0, 0, size, size);
+}
+
 interface Props {
   data: AppData | null;
   base: BaseMap;
@@ -73,13 +94,15 @@ interface Props {
   windHour: { from: number | null; downwind: number | null } | null;
   userLoc: [number, number] | null;
   pins: UserPin[];
+  setups: SetupMarker[];
+  typeFilter: ZoneTypeFilter;
   startPin: [number, number] | null;
   onCandidate: (id: string) => void;
   onInspect: (lngLat: [number, number]) => void;
   mapRef: React.MutableRefObject<MLMap | null>;
 }
 
-export function MapView({ data, base, layers, scores, selected, windHour, userLoc, pins, startPin, onCandidate, onInspect, mapRef }: Props) {
+export function MapView({ data, base, layers, scores, selected, windHour, userLoc, pins, setups, typeFilter, startPin, onCandidate, onInspect, mapRef }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const ready = useRef(false);
   const pending = useRef<Array<() => void>>([]);
@@ -153,6 +176,7 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       map.addLayer({ id: 'cand-fill', type: 'fill', source: 'cands', paint: { 'fill-color': ['case', ['==', ['get', 'score'], -1], '#7a7a7a', ['interpolate', ['linear'], ['get', 'score'], 35, '#b0413e', 55, '#e0a43a', 75, '#5fbf5a']], 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.8, 14, 0.45] } });
       map.addLayer({ id: 'cand-line', type: 'line', source: 'cands', paint: { 'line-color': '#101510', 'line-width': 0.8 } });
       map.addSource('selected', { type: 'geojson', data: empty });
+      if (!map.hasImage('setup-x')) map.addImage('setup-x', setupIcon(48), { pixelRatio: 2 });
       map.addLayer({ id: 'selected-fill', type: 'fill', source: 'selected', paint: { 'fill-color': '#ffe9a8', 'fill-opacity': 0.18 } });
       map.addLayer({ id: 'selected-casing', type: 'line', source: 'selected', paint: { 'line-color': '#101510', 'line-width': 7, 'line-opacity': 0.85 } });
       map.addLayer({ id: 'selected-line', type: 'line', source: 'selected', paint: { 'line-color': '#ffe9a8', 'line-width': 3.5 } });
@@ -165,6 +189,9 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       map.addSource('access', { type: 'geojson', data: { type: 'FeatureCollection', features: [...data.accessPoints.features] } });
       map.addLayer({ id: 'access', type: 'circle', source: 'access', paint: { 'circle-radius': 6, 'circle-color': ['match', ['get', 'kind'], 'checking station', '#ff5c5c', '#3fa7ff'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } });
       map.addLayer({ id: 'access-label', type: 'symbol', source: 'access', minzoom: 11, layout: { 'text-field': ['get', 'name'], 'text-size': 11, 'text-offset': [0, 1.1], 'text-anchor': 'top', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#fff', 'text-halo-color': '#000', 'text-halo-width': 1.2 } });
+      map.addSource('setups', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'setups', type: 'symbol', source: 'setups', layout: { 'icon-image': 'setup-x', 'icon-size': ['case', ['get', 'primary'], 1.25, 0.85], 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'symbol-sort-key': ['case', ['get', 'primary'], 1, 0] } });
+      map.addLayer({ id: 'setup-label', type: 'symbol', source: 'setups', minzoom: 13, filter: ['get', 'primary'], layout: { 'text-field': 'Set up here', 'text-size': 11, 'text-offset': [0, 1.4], 'text-anchor': 'top', 'text-font': ['Noto Sans Regular'] }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#b01010', 'text-halo-width': 1.5 } });
       map.addSource('pins', { type: 'geojson', data: empty });
       map.addLayer({ id: 'pins', type: 'circle', source: 'pins', paint: { 'circle-radius': 6, 'circle-color': ['coalesce', ['get', 'color'], '#fff'], 'circle-stroke-color': '#000', 'circle-stroke-width': 1.5 } });
       map.addSource('me', { type: 'geojson', data: empty });
@@ -192,7 +219,7 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       vis(['contours', 'contour-labels'], layers.contours);
       vis(['slope'], layers.slope);
       vis(['disturbance', 'fuel-line'], layers.disturbance);
-      vis(['cand-fill', 'cand-line'], layers.candidates);
+      vis(['cand-fill', 'cand-line', 'setups', 'setup-label'], layers.candidates);
       vis(['access', 'access-label'], layers.access);
       vis(['pins'], layers.pins);
     };
@@ -204,11 +231,32 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
     const map = mapRef.current;
     if (!map || !data) return;
     const apply = () => {
-      const fc = { type: 'FeatureCollection', features: data.candidatesFc.features.map((f) => ({ ...f, properties: { id: f.properties.id, score: scores.has(f.properties.id) ? scores.get(f.properties.id) ?? -1 : -1 } })) };
+      const fc = { type: 'FeatureCollection', features: data.candidatesFc.features.map((f) => ({ ...f, properties: { id: f.properties.id, type: f.properties.type, score: scores.has(f.properties.id) ? scores.get(f.properties.id) ?? -1 : -1 } })) };
       (map.getSource('cands') as GeoJSONSource | undefined)?.setData(fc as FeatureCollection);
     };
     whenReady(apply);
   }, [scores, data, mapRef]);
+
+  // red ✕ setup markers
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => (map.getSource('setups') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: setups.map((m) => ({ type: 'Feature', properties: { id: m.id, primary: m.primary, label: m.label }, geometry: { type: 'Point', coordinates: m.coord } })) });
+    whenReady(apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setups, mapRef]);
+
+  // zone-type filter (Saddles / Benches / …)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const f = typeFilter === 'all' ? null : (['==', ['get', 'type'], typeFilter] as maplibregl.FilterSpecification);
+      for (const id of ['cand-fill', 'cand-line']) if (map.getLayer(id)) map.setFilter(id, f);
+    };
+    whenReady(apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter, data, mapRef]);
 
   // selection, cone, route
   useEffect(() => {
@@ -218,7 +266,9 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       const sel = selected ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: selected.geometry }] } : empty;
       (map.getSource('selected') as GeoJSONSource | undefined)?.setData(sel as FeatureCollection);
       const dw = windHour?.downwind ?? selected?.windAssessment.scentDownwindDegrees;
-      (map.getSource('cone') as GeoJSONSource | undefined)?.setData(selected && dw != null ? { type: 'FeatureCollection', features: [scentCone(selected.center, dw)] } : empty);
+      // the cone is the hunter's scent, so it starts at the suggested setup (red ✕) when there is one
+      const origin = setups.find((m) => m.primary)?.coord ?? selected?.center;
+      (map.getSource('cone') as GeoJSONSource | undefined)?.setData(selected && origin && dw != null ? { type: 'FeatureCollection', features: [scentCone(origin, dw)] } : empty);
       const r = selected?.route;
       let routeFc: FeatureCollection = empty;
       if (r) {
@@ -233,7 +283,7 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       (map.getSource('route') as GeoJSONSource | undefined)?.setData(routeFc);
     };
     whenReady(apply);
-  }, [selected, windHour, mapRef]);
+  }, [selected, windHour, setups, mapRef]);
 
   // user location + start pin + pins
   useEffect(() => {
