@@ -31,7 +31,10 @@ export interface RouteOption {
   walkMeters: number;
   onNetworkMeters: number;
   offTrailMeters: number;
-  routeKind: 'network+offtrail' | 'straight';
+  /** terrain = least-effort path on 10 m elevation (precomputed); lidar = refined on ~4 m lidar in the browser */
+  routeKind: 'network+offtrail' | 'straight' | 'terrain' | 'lidar';
+  walkMinutes?: number;
+  elevationSource?: string;
   path: [number, number][];
   profile: [number, number][]; // [distM, elevM]
   gainInMeters: number;
@@ -191,7 +194,7 @@ export interface HuntRecommendation {
   weatherFactors: string[];
   windAssessment: WindAssessment;
   recommendedWindow?: { start: string; end: string };
-  route?: { verifiedAccessPointId: string; name: string; distanceMeters: number; elevationGainMeters?: number; verification: string; coord: [number, number]; routeKind: RouteOption['routeKind']; onNetworkMeters: number; offTrailMeters: number; path: [number, number][]; profile: [number, number][] };
+  route?: { verifiedAccessPointId: string; name: string; distanceMeters: number; elevationGainMeters?: number; verification: string; coord: [number, number]; routeKind: RouteOption['routeKind']; onNetworkMeters: number; offTrailMeters: number; path: [number, number][]; profile: [number, number][]; walkMinutes?: number; elevationSource?: string; maxSlopeDeg?: number };
   reasons: string[];
   warnings: string[];
   improvements: string[];

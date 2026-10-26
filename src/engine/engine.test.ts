@@ -18,6 +18,7 @@ import { buildHuntPlan, huntableWinds, walkMinutes, setupPoint } from './plan';
 import { bearingTo, haversine } from './geography';
 import zlib from 'node:zlib';
 import * as turf from '@turf/turf';
+import { CLIFF_DEG, findPath, slopeDeg, fillRings } from './pathfind';
 import { buildRoadIndex, roadDistance, setRoadIndex } from './roads';
 
 const DATA = path.resolve(__dirname, '../../public/data');
@@ -346,13 +347,13 @@ describe('routes and disturbance data', () => {
         expect(r.path.length).toBeGreaterThanOrEqual(2);
         expect(r.profile.length).toBeGreaterThanOrEqual(2);
         expect(r.walkMeters).toBeGreaterThanOrEqual(r.straightLineMeters * 0.99);
-        if (r.routeKind === 'network+offtrail') expect(r.onNetworkMeters + r.offTrailMeters).toBeGreaterThan(0);
+        if (r.routeKind === 'network+offtrail' || r.routeKind === 'terrain') expect(r.onNetworkMeters + r.offTrailMeters).toBeGreaterThan(0);
       }
     }
   });
-  it('most zones are reached by a mapped road or trail', () => {
-    const net = candidates.filter((c) => c.properties.routes[0].routeKind === 'network+offtrail').length;
-    expect(net / candidates.length).toBeGreaterThan(0.5);
+  it('almost every zone has a walkable terrain route (not a straight line)', () => {
+    const routed = candidates.filter((c) => c.properties.routes[0].routeKind === 'terrain').length;
+    expect(routed / candidates.length).toBeGreaterThan(0.95);
   });
   it('disturbance fractions are present and bounded', () => {
     for (const c of candidates.slice(0, 50)) {
@@ -579,5 +580,45 @@ describe('statewide seasons on National Forest land', () => {
     expect(deerZoneAt(layers, [-87.30, 33.97]).deerZone).toBe('C'); // Walker County, south of the county line
     expect(rutPhase('2026-12-28', 'C').phase).toBe('rut');
     expect(rutPhase('2026-12-28', 'D').phase).toBe('post_rut');
+  });
+});
+
+// ---------------- Terrain pathfinder ----------------
+describe('terrain pathfinder', () => {
+  const mk = (w: number, h: number, f: (x: number, y: number) => number) => { const e = new Float32Array(w * h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) e[y * w + x] = f(x, y); return { w, h, dx: 10, dy: 10, elev: e }; };
+  it('goes around a cliff instead of over it', () => {
+    const g = mk(60, 40, (x, y) => (x > 25 && x < 35 && y < 30 ? 200 : 100)); // 100 m wall with a gap at y ≥ 30
+    const s = slopeDeg(g);
+    const r = findPath(g, s, new Uint8Array(60 * 40), new Uint8Array(60 * 40), [{ i: 10 * 60 + 5, cost: 0, tag: 0 }], 10 * 60 + 55)!;
+    expect(r).not.toBeNull();
+    expect(Math.max(...r.cells.map((c) => Math.floor(c / 60)))).toBeGreaterThanOrEqual(30);
+    expect(r.maxSlopeDeg).toBeLessThan(CLIFF_DEG);
+  });
+  it('prefers a longer flat walk over climbing in and out of a holler', () => {
+    // a 60 m-deep, steep-sided holler across the direct line, ending at y = 32
+    const g = mk(60, 40, (x, y) => (y < 32 && x > 24 && x < 36 ? 100 - 60 * Math.cos(((x - 30) / 6) * (Math.PI / 2)) : 100));
+    const r = findPath(g, slopeDeg(g), new Uint8Array(2400), new Uint8Array(2400), [{ i: 10 * 60 + 5, cost: 0, tag: 0 }], 10 * 60 + 55)!;
+    expect(r.gainM).toBeLessThan(20);
+  });
+  it('never crosses blocked (private) land', () => {
+    const g = mk(40, 40, () => 100);
+    const blocked = new Uint8Array(1600);
+    fillRings([[[15, -1], [25, -1], [25, 35], [15, 35], [15, -1]]], 40, 40, blocked, 1); // wall of private land with a gap at the bottom
+    const r = findPath(g, slopeDeg(g), blocked, new Uint8Array(1600), [{ i: 10 * 40 + 2, cost: 0, tag: 0 }], 10 * 40 + 37)!;
+    expect(r.cells.every((c) => !blocked[c])).toBe(true);
+  });
+  it('is faster along a mapped trail than cross-country', () => {
+    const g = mk(50, 10, () => 100);
+    const on = new Uint8Array(500);
+    for (let x = 0; x < 50; x++) on[5 * 50 + x] = 1;
+    const a = findPath(g, slopeDeg(g), new Uint8Array(500), on, [{ i: 5 * 50, cost: 0, tag: 0 }], 5 * 50 + 49)!;
+    const b = findPath(g, slopeDeg(g), new Uint8Array(500), new Uint8Array(500), [{ i: 5 * 50, cost: 0, tag: 0 }], 5 * 50 + 49)!;
+    expect(a.seconds).toBeLessThan(b.seconds * 0.7);
+  });
+  it('precomputed zone routes follow terrain and never cross cliff-steep ground', () => {
+    const terrain = candidates.flatMap((c) => c.properties.routes).filter((r) => r.routeKind === 'terrain');
+    expect(terrain.length / candidates.flatMap((c) => c.properties.routes).length).toBeGreaterThan(0.9);
+    expect(terrain.filter((r) => r.maxSlopeDeg >= CLIFF_DEG)).toHaveLength(0);
+    for (const r of terrain.slice(0, 200)) { expect(r.walkMinutes).toBeGreaterThan(0); expect(r.walkMeters).toBeGreaterThanOrEqual(r.straightLineMeters * 0.99); }
   });
 });

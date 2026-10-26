@@ -9,14 +9,15 @@ import { downloadText, gpxToPins, makeBackup, mergeById, parseBackup, pinsToGpx 
 import { getNormals, getPastDay, type Normals } from './engine/climate';
 import { analyzeSpot, buildWalkNetwork, loadGrid, type WalkNetwork } from './engine/spot';
 import { buildHuntPlan, setupPoint } from './engine/plan';
-import { buildRoadIndex, setRoadIndex } from './engine/roads';
-import type { Candidate } from './engine/types';
+import { buildRoadIndex, setPathIndex, setRoadIndex } from './engine/roads';
+import { lidarRoute } from './engine/lidar';
+import type { Candidate, RouteOption } from './engine/types';
 import { TabBar, TabIcon } from './components/TabBar';
 import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, WeatherBundle } from './engine/types';
 import { addDays, BANKHEAD_CENTER, fmtDate, fmtTime, localDate, sessionWindows, sunDay } from './engine/time';
 import { getAlerts, getWeather, hoursBetween } from './engine/weather';
 import { evaluateCandidate, rankCandidates, sessionsFor } from './engine/scoring';
-import { lookupJurisdiction } from './engine/geography';
+import { haversine, lookupJurisdiction } from './engine/geography';
 import { peakTimeline } from './engine/peak';
 import { evaluateLegal } from './engine/regulations';
 import { useJournal, usePersisted, usePins, uid, type JournalEntry } from './store';
@@ -28,7 +29,7 @@ type InstallPrompt = any;
 import { inStudyArea } from './engine/config';
 
 const DEFAULT_PREFS: HuntPreferences = { date: localDate(), session: 'compare', weapon: 'bow', target: 'any', maxWalkMeters: 3200, stand: 'climber', effort: 'balanced', youthHunter: false, start: null };
-const DEFAULT_LAYERS: LayerToggles = { boundaries: true, ownership: true, wilderness: true, roads: true, trails: true, streams: true, contours: true, slope: false, disturbance: false, candidates: true, access: true, pins: true };
+const DEFAULT_LAYERS: LayerToggles = { boundaries: true, ownership: true, wilderness: true, roads: true, trails: true, streams: true, contours: true, slope: false, disturbance: false, lidar: false, candidates: true, access: true, pins: true };
 
 export default function App() {
   const [data, setData] = useState<AppData | null>(null);
@@ -98,6 +99,8 @@ export default function App() {
   const [checking, setChecking] = useState<string | null>(null);
   const [pendingSpot, setPendingSpot] = useState<{ pt: [number, number]; date?: string; session?: Session } | null>(null);
   const netRef = useRef<WalkNetwork | null>(null);
+  // lidar-refined routes keyed by zone/spot id ('loading' | 'error' | 'offline' while not available)
+  const [lidar, setLidar] = useState<Record<string, RouteOption | 'loading' | 'error' | 'none'>>({});
   const journal = useJournal();
   const mapRef = useRef<MLMap | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -105,6 +108,7 @@ export default function App() {
   useEffect(() => {
     loadData().then((d) => {
       setRoadIndex(buildRoadIndex(d.fsRoads, d.highways, d.osmRoads));
+      setPathIndex(buildRoadIndex(d.fsRoads, d.highways, d.osmRoads, d.trails));
       setData(d);
       // ?zone=BH-..&date=YYYY-MM-DD&session=evening — shared link opens that zone
       const q = new URLSearchParams(window.location.search);
@@ -179,7 +183,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, prefs, weather, pins, normals]);
 
-  const findCand = useCallback((id: string) => data?.candidates.find((x) => x.properties.id === id) ?? spots.find((x) => x.properties.id === id) ?? null, [data, spots]);
+  const findCand = useCallback((id: string) => {
+    const c = data?.candidates.find((x) => x.properties.id === id) ?? spots.find((x) => x.properties.id === id) ?? null;
+    const lr = lidar[id];
+    // a lidar route, once computed, becomes the zone's first route everywhere (scoring, plan, map)
+    return c && lr && typeof lr === 'object' ? { ...c, properties: { ...c.properties, routes: [lr, ...c.properties.routes.filter((r) => r.routeKind !== 'lidar')] } } : c;
+  }, [data, spots, lidar]);
   const selected = useMemo<HuntRecommendation | null>(() => {
     if (!selectedKey || !data) return null;
     const c = findCand(selectedKey.id);
@@ -251,6 +260,29 @@ export default function App() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, view, prefs, weather, pins, selectedKey, normals]);
+
+  // Refine the open zone's walk-in on ~4 m lidar (online only; cached per zone for the session)
+  useEffect(() => {
+    const id = selectedKey?.id;
+    if (!id || !data || lidar[id] || !online) return;
+    const c = data.candidates.find((x) => x.properties.id === id) ?? spots.find((x) => x.properties.id === id);
+    if (!c) return;
+    const ctl = new AbortController();
+    setLidar((m) => ({ ...m, [id]: 'loading' }));
+    (async () => {
+      try {
+        if (!netRef.current) netRef.current = buildWalkNetwork(data.fsRoads, data.trails, data.highways, data.recSites, data.checkStations);
+        const near = c.properties.routes[0];
+        const radiusM = Math.min(2400, Math.max(1100, (near ? haversine(near.coord, c.properties.center) : 1200) + 350));
+        const r = await lidarRoute(c.properties.center, netRef.current, { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] }, { radiusM, signal: ctl.signal });
+        setLidar((m) => ({ ...m, [id]: r ?? 'none' }));
+      } catch (e) {
+        if (!ctl.signal.aborted) { console.error('lidar route', e); setLidar((m) => ({ ...m, [id]: 'error' })); }
+      }
+    })();
+    return () => { ctl.abort(); setLidar((m) => (m[id] === 'loading' ? Object.fromEntries(Object.entries(m).filter(([k]) => k !== id)) : m)); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey?.id, data, online]);
 
   // deep-linked selection: fit once the map and data exist
   const deepLinked = useRef(false);
@@ -548,7 +580,7 @@ export default function App() {
               {!isMobile && inspect && jur && jurLegal && <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} onCheck={() => checkSpot(inspect)} checking={checking} />}
               {selected ? (
                 <>
-                  <RecDetail rec={selected} compare={selectedCompare} timeline={timeline} plan={plan} onPickSession={(s) => setSelectedKey((k) => (k ? { ...k, session: s } : k))} onClose={() => setSelectedKey(null)} saved={saved}
+                  <RecDetail rec={selected} lidarStatus={selectedKey ? (typeof lidar[selectedKey.id] === 'object' ? 'done' : (lidar[selectedKey.id] as string | undefined) ?? (online ? 'loading' : 'offline')) : undefined} compare={selectedCompare} timeline={timeline} plan={plan} onPickSession={(s) => setSelectedKey((k) => (k ? { ...k, session: s } : k))} onClose={() => setSelectedKey(null)} saved={saved}
                     onSave={() => addPin({ kind: 'saved_candidate', coord: selected.center, note: `${selected.candidate.label}`, candidateId: selected.areaId })}
                     onNavigate={() => navigate(selected)}
                     onShowMap={() => showOnMap(selected)}
@@ -605,5 +637,5 @@ export default function App() {
 }
 
 const LAYER_LABEL: Record<keyof LayerToggles, string> = {
-  boundaries: 'WMA / National Forest / zone lines', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', disturbance: 'Burns & timber (LANDFIRE)', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
+  boundaries: 'WMA / National Forest / zone lines', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', disturbance: 'Burns & timber (LANDFIRE)', lidar: 'Lidar hillshade (old roads & trails, zoom in)', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
 };

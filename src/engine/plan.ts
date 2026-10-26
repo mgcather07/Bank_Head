@@ -99,7 +99,7 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   // ---- when ----
   const when: string[] = [];
   const peak = timeline?.peaks.find((pk) => (rec.session === 'morning' ? pk.start < sun.solarNoon : rec.session === 'evening' ? pk.start >= sun.solarNoon : true)) ?? timeline?.peaks[0];
-  const walkMin = rec.route ? walkMinutes(rec.route.onNetworkMeters, rec.route.offTrailMeters, rec.route.elevationGainMeters ?? 0) : null;
+  const walkMin = rec.route ? rec.route.walkMinutes ?? walkMinutes(rec.route.onNetworkMeters, rec.route.offTrailMeters, rec.route.elevationGainMeters ?? 0) : null;
   if (rec.session === 'morning') {
     const settled = sun.legalStart - 20 * 60000;
     when.push(`Be in your setup by ${t(settled)} — 20 minutes before legal light (${t(sun.legalStart)}).`);
@@ -147,7 +147,8 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   if (rec.route) {
     const r = rec.route;
     app.push(`Park at ${r.name} (${r.coord[1].toFixed(5)}, ${r.coord[0].toFixed(5)}).`);
-    if (r.routeKind === 'network+offtrail') app.push(`Walk ${(r.onNetworkMeters / 1609).toFixed(1)} mi along the mapped road/trail, then ${r.offTrailMeters} m off-trail to the spot (~${Math.round((r.elevationGainMeters ?? 0) * 3.28)} ft climb, ≈${walkMin} min).`);
+    if (r.routeKind === 'terrain' || r.routeKind === 'lidar') app.push(`Follow the ${r.routeKind === 'lidar' ? 'lidar' : 'terrain'} route on the map: ${(r.distanceMeters / 1609).toFixed(1)} mi (${(r.onNetworkMeters / 1609).toFixed(1)} mi on roads/trails, ${r.offTrailMeters} m cross-country), ~${Math.round((r.elevationGainMeters ?? 0) * 3.28)} ft of climbing, ≈${walkMin} min. It avoids bluffs and steep side-hills${r.routeKind === 'lidar' ? ' and follows old roadbeds/benches where the lidar shows them' : ''}.`);
+    else if (r.routeKind === 'network+offtrail') app.push(`Walk ${(r.onNetworkMeters / 1609).toFixed(1)} mi along the mapped road/trail, then ${r.offTrailMeters} m off-trail to the spot (~${Math.round((r.elevationGainMeters ?? 0) * 3.28)} ft climb, ≈${walkMin} min).`);
     else app.push(`No mapped road or trail gets close — about ${(r.distanceMeters / 1609).toFixed(1)} mi cross-country (~${Math.round((r.elevationGainMeters ?? 0) * 3.28)} ft climb, ≈${walkMin} min). Scout this route in daylight first.`);
     const appr = p.routes.find((x) => x.accessPointId === r.verifiedAccessPointId)?.approachBearing ?? null;
     if (appr != null && p.beddingCoverBearing != null && angleDiff((appr + 180) % 360, p.beddingCoverBearing) < 50) app.push(`⚠ The direct walk-in comes from the bedding side. Swing wide and make your final approach from the ${compass(p.foodWaterBearing ?? (p.beddingCoverBearing + 180) % 360)}.`);

@@ -13,7 +13,7 @@ The site is entirely static. It has no Cloud Functions and no backend.
 | Boundary / access ingest | `scripts/fetch-sources.mjs`, `scripts/fetch-osm-highways.mjs` (local, on demand) | ADCNR + USFS ArcGIS REST, OSM Overpass |
 | Terrain + habitat analysis, candidate generation | `scripts/build-terrain.mjs` (local, about 2.5 min) | USGS 3DEP DEM + LANDFIRE EVT → `public/data/candidates.geojson` |
 | Source registry | `scripts/build-registry.mjs` | → `public/data/sources.json` |
-| Walking routes + elevation profiles | `scripts/build-terrain.mjs` (`scripts/lib/network.mjs`) | Dijkstra over FS roads, NFS trails and highways; off-trail leg ×1.35 |
+| Walking routes + elevation profiles | `scripts/build-routes.mjs` + `src/engine/pathfind.ts` | Least-effort terrain routes on 10 m 3DEP (cliffs, private land, water avoided); refined in the browser on ~4 m lidar (`src/engine/lidar.ts`) |
 | Offline map packs | Browser → USGS tiles into the service-worker cache | Up to 2,500 tiles per save (z11–15) |
 | Backup | Browser → .json / .gpx download and import | |
 | Compass | Browser DeviceOrientation | iOS asks for permission |
@@ -39,7 +39,7 @@ Engine modules (`src/engine`):
 ```bash
 npm install
 npm run dev          # local dev server
-npm test             # 76 engine tests (jurisdiction, regulations, wind, time/DST, data failures, scoring)
+npm test             # 81 engine tests (LIDAR_TEST=1 also runs a live USGS lidar routing check) (jurisdiction, regulations, wind, time/DST, data failures, scoring)
 npm run data         # re-download sources + rebuild terrain candidates + registry
 npm run deploy       # build + firebase deploy --only hosting:bankhead --project rehtac-labs
 ```

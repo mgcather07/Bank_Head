@@ -12,15 +12,17 @@
     "data:fetch": "node scripts/fetch-sources.mjs && node scripts/fetch-osm-highways.mjs && node scripts/fetch-osm-roads.mjs && node scripts/build-deer-zones.mjs",
     "data:terrain": "node --max-old-space-size=4096 scripts/build-terrain.mjs",
     "data:registry": "node scripts/build-registry.mjs",
-    "data": "npm run data:fetch && npm run data:terrain && npm run data:registry",
+    "data": "npm run data:fetch && npm run data:terrain && npm run data:routes && npm run data:registry",
     "deploy": "npm run build && firebase deploy --only hosting:bankhead --project rehtac-labs",
-    "og": "node scripts/make-og.mjs"
+    "og": "node scripts/make-og.mjs",
+    "data:routes": "node --max-old-space-size=8192 scripts/build-routes.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^6.15.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "suncalc": "^2.1.1"
+    "suncalc": "^2.1.1",
+    "geotiff": "^3.0.5"
   },
   "devDependencies": {
     "@turf/turf": "^7.4.0",
@@ -31,7 +33,6 @@
     "@types/suncalc": "^1.9.2",
     "@vitejs/plugin-react": "^6.1.2",
     "d3-contour": "^4.0.2",
-    "geotiff": "^3.0.5",
     "oxlint": "^1.88.0",
     "pngjs": "^7.0.0",
     "sharp": "^0.35.5",

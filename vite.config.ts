@@ -33,6 +33,12 @@ export default defineConfig({
             options: { cacheName: 'usgs-tiles', expiration: { maxEntries: 4000, maxAgeSeconds: 60 * 60 * 24 * 30 }, cacheableResponse: { statuses: [0, 200] } },
           },
           {
+            // lidar hillshade tiles viewed in the field
+            urlPattern: /^https:\/\/elevation\.nationalmap\.gov\/arcgis\/rest\/services\/3DEPElevation\/ImageServer\/exportImage\?bbox=.*f=image$/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'lidar-hillshade', expiration: { maxEntries: 1500, maxAgeSeconds: 60 * 60 * 24 * 30 }, cacheableResponse: { statuses: [0, 200] } },
+          },
+          {
             urlPattern: /^https:\/\/protomaps\.github\.io\/.*/,
             handler: 'CacheFirst',
             options: { cacheName: 'map-fonts', expiration: { maxEntries: 50 } },

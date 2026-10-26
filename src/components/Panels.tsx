@@ -252,7 +252,7 @@ async function shareZone(rec: HuntRecommendation) {
   } catch { /* cancelled */ }
 }
 
-export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap, timeline, plan, onPickSession }: { rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void; timeline?: PeakTimeline | null; plan?: HuntPlan | null; onPickSession?: (s: Session) => void }) {
+export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, onJournal, onShowMap, timeline, plan, onPickSession, lidarStatus }: { lidarStatus?: string; rec: HuntRecommendation; compare: Partial<Record<Session, HuntRecommendation>>; onClose: () => void; onSave: () => void; saved: boolean; onNavigate: () => void; onJournal: () => void; onShowMap?: () => void; timeline?: PeakTimeline | null; plan?: HuntPlan | null; onPickSession?: (s: Session) => void }) {
   const p = rec.candidate;
   const [open, setOpen] = useState<string | null>('why');
   const Sec = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => (
@@ -324,16 +324,19 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         {rec.route ? (
           <ul className="small">
             <li>Start: <b>{rec.route.name}</b> ({rec.route.coord[1].toFixed(5)}, {rec.route.coord[0].toFixed(5)})</li>
-            {rec.route.routeKind === 'network+offtrail' ? (
+            {rec.route.routeKind === 'terrain' || rec.route.routeKind === 'lidar' ? (
+              <li>Walk: <b>{mi(rec.route.distanceMeters)}</b>, ≈{rec.route.walkMinutes} min — {mi(rec.route.onNetworkMeters)} on roads/trails, {rec.route.offTrailMeters} m cross-country. Routed over {rec.route.elevationSource ?? 'terrain'}: avoids bluffs (&gt;38°), penalises steep side-hills, stays off private land and open water.</li>
+            ) : rec.route.routeKind === 'network+offtrail' ? (
               <li>Walk: <b>{mi(rec.route.distanceMeters)}</b> — {mi(rec.route.onNetworkMeters)} along mapped FS road/trail, then {rec.route.offTrailMeters} m off-trail (×1.35 allowance). Road/trail centerlines are from USFS inventory, not a field-checked path.</li>
             ) : (
               <li>Walk: ~{mi(rec.route.distanceMeters)} <b>straight-line estimate</b> (×1.35) — no mapped road or trail reaches within 1.5 km of this zone. Not a traversable route.</li>
             )}
-            <li>Elevation gain in: ~{Math.round((rec.route.elevationGainMeters ?? 0) * 3.28)} ft; max slope on route {p.routes.find((r) => r.accessPointId === rec.route!.verifiedAccessPointId)?.maxSlopeDeg ?? '—'}°.</li>
+            <li>Elevation gain in: ~{Math.round((rec.route.elevationGainMeters ?? 0) * 3.28)} ft; steepest ground crossed {rec.route.maxSlopeDeg ?? p.routes.find((r) => r.accessPointId === rec.route!.verifiedAccessPointId)?.maxSlopeDeg ?? '—'}°.</li>
             <li>{rec.route.verification}</li>
             <li>Approach heading {compass(p.routes.find((r) => r.accessPointId === rec.route!.verifiedAccessPointId)?.approachBearing ?? null)}.</li>
           </ul>
         ) : <p className="small">No access point within range.</p>}
+        {lidarStatus && <p className={`tiny ${lidarStatus === 'done' ? 'lidar-ok' : 'muted'}`}>{lidarStatus === 'done' ? '✓ Route refined on USGS lidar — follows old roadbeds and benches where they exist.' : lidarStatus === 'loading' ? 'Refining route with lidar…' : lidarStatus === 'offline' ? 'Offline — showing the 10 m terrain route. Lidar refinement needs signal.' : lidarStatus === 'none' ? 'Lidar found no better walkable line here; showing the 10 m terrain route.' : 'Lidar refinement unavailable right now; showing the 10 m terrain route.'}</p>}
         {rec.route && rec.route.profile?.length > 2 && <Profile profile={rec.route.profile} offTrailM={rec.route.offTrailMeters} gainInM={rec.route.elevationGainMeters ?? 0} />}
         <p className="tiny muted">Road appearance does not prove legal vehicle access. Check the USFS Motor Vehicle Use Map and posted gates.</p>
       </Sec>

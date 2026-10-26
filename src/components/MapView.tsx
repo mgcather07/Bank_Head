@@ -22,6 +22,7 @@ export interface LayerToggles {
   contours: boolean;
   slope: boolean;
   disturbance: boolean;
+  lidar: boolean;
   candidates: boolean;
   access: boolean;
   pins: boolean;
@@ -30,6 +31,7 @@ export interface LayerToggles {
 const USGS = (svc: string) => `https://basemap.nationalmap.gov/arcgis/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`;
 const BASES: Record<BaseMap, string> = { topo: 'USGSTopo', satellite: 'USGSImageryOnly', hybrid: 'USGSImageryTopo', hillshade: 'USGSShadedReliefOnly' };
 import { STUDY_BBOX } from '../engine/config';
+import { pathDistance } from '../engine/roads';
 const [B0, B1, B2, B3] = STUDY_BBOX;
 const SLOPE_BOUNDS: [[number, number], [number, number], [number, number], [number, number]] = [[B0, B3], [B2, B3], [B2, B1], [B0, B1]];
 
@@ -154,6 +156,9 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       if (map.getSource('wma')) return;
       map.addSource('slope', { type: 'image', url: `${import.meta.env.BASE_URL}data/slope.png`, coordinates: SLOPE_BOUNDS });
       map.addLayer({ id: 'slope', type: 'raster', source: 'slope', paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
+      // Lidar hillshade (USGS 3DEP, multidirectional) — old roadbeds, skid trails and benches show as crisp lines
+      map.addSource('lidar-hs', { type: 'raster', tileSize: 256, minzoom: 11, maxzoom: 17, attribution: 'USGS 3DEP lidar', tiles: ['https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&renderingRule=%7B%22rasterFunction%22%3A%22Hillshade%20Multidirectional%22%7D&f=image'] });
+      map.addLayer({ id: 'lidar-hs', type: 'raster', source: 'lidar-hs', minzoom: 12, paint: { 'raster-opacity': 0.55 }, layout: { visibility: 'none' } });
       map.addSource('disturbance', { type: 'image', url: `${import.meta.env.BASE_URL}data/disturbance.png`, coordinates: SLOPE_BOUNDS });
       map.addLayer({ id: 'disturbance', type: 'raster', source: 'disturbance', paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
       map.addSource('fuel', { type: 'geojson', data: data.fuelTreatments });
@@ -228,6 +233,7 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       vis(['contours', 'contour-labels'], layers.contours);
       vis(['slope'], layers.slope);
       vis(['disturbance', 'fuel-line'], layers.disturbance);
+      vis(['lidar-hs'], layers.lidar);
       vis(['cand-fill', 'cand-line', 'setups', 'setup-label'], layers.candidates);
       vis(['access', 'access-label'], layers.access);
       vis(['pins'], layers.pins);
@@ -285,7 +291,20 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       let routeFc: FeatureCollection = empty;
       if (r) {
         const path = r.path?.length >= 2 ? r.path : [r.coord, selected!.center];
-        if (r.routeKind === 'network+offtrail' && r.offTrailMeters > 5 && path.length >= 3) {
+        if (r.routeKind === 'terrain' || r.routeKind === 'lidar') {
+          // colour each stretch by whether it follows a mapped road/trail (blue) or goes cross-country (gold, dashed)
+          const feats: Feature[] = [];
+          let cur: number[][] = [path[0]], curLeg: string | null = null;
+          for (let k = 1; k < path.length; k++) {
+            const mid: [number, number] = [(path[k - 1][0] + path[k][0]) / 2, (path[k - 1][1] + path[k][1]) / 2];
+            const leg = pathDistance(mid, 40) < 18 ? 'network' : 'offtrail';
+            if (curLeg && leg !== curLeg) { feats.push({ type: 'Feature', properties: { leg: curLeg }, geometry: { type: 'LineString', coordinates: cur } }); cur = [path[k - 1]]; }
+            curLeg = leg;
+            cur.push(path[k]);
+          }
+          if (cur.length > 1) feats.push({ type: 'Feature', properties: { leg: curLeg ?? 'offtrail' }, geometry: { type: 'LineString', coordinates: cur } });
+          routeFc = { type: 'FeatureCollection', features: feats };
+        } else if (r.routeKind === 'network+offtrail' && r.offTrailMeters > 5 && path.length >= 3) {
           routeFc = { type: 'FeatureCollection', features: [
             { type: 'Feature', properties: { leg: 'network' }, geometry: { type: 'LineString', coordinates: path.slice(0, -1) } },
             { type: 'Feature', properties: { leg: 'offtrail' }, geometry: { type: 'LineString', coordinates: path.slice(-2) } },

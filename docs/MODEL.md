@@ -74,3 +74,15 @@ A tapped point is scored with the same terrain/habitat formula as the generated 
 Built from the evaluation itself. **Huntable winds** are the 16 compass directions whose downwind bearing keeps exposure to the bedding side (weight 1) and food side (0.6–0.75) under 0.3. Walk time assumes 2.5 mph on roads/trails, 1.2 mph off-trail and 1 min per 10 m of climb.
 
 The red ✕ setup point is about 60 yd downwind of the zone center. If that spot is within 50 m of any road, it swings up to ±60° and 40–80 m until it is clear, and the plan says it was shifted. A checked spot within 40 m of a road gets the verdict "On or next to a road — move off it".
+
+## Walk-in routes (terrain and lidar)
+
+Routes are least-effort walking paths (`src/engine/pathfind.ts`), not straight lines:
+- **Speed:** Tobler's hiking function on each step's grade, ×0.6 off mapped roads/trails.
+- **Cliffs:** cells steeper than 38° are impassable, and side-hills between 25° and 38° are penalized up to 3×.
+- **Blocked ground:** private (non-FS) land and open water are blocked except where a mapped road crosses them. Open water is detected from hydro-flattened (dead-level) lidar surfaces.
+- **Search:** multi-source search from every road/trail node, seeded with the time to walk there from the nearest drivable start, so the route uses the network as far as it helps.
+- **Precomputed (offline):** every zone is routed on USGS 3DEP 1/3 arc-second (~10 m, lidar-derived) elevation (`scripts/build-routes.mjs`). Of 871 zones, 850 have terrain routes. The other 21 have no reachable start within 4 km and keep an estimate labelled as such. Median climb on the way in fell from 45 m to 24 m versus the old straight-line legs, and no route crosses ground ≥ 38°.
+- **Refined (online):** opening a zone or checked spot fetches ~4 m lidar elevation around it from USGS and re-routes (`src/engine/lidar.ts`, about 1 s). At this resolution old logging roads, skid trails and benches are the easiest lines on a slope, so the route follows them where they exist. A **Lidar hillshade** map layer shows those features.
+
+These are suggestions over mapped terrain. They don't know about blowdowns, briars, fences or high water, and road/trail centerlines are inventory data, not field-checked.

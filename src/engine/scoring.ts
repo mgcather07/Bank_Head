@@ -72,11 +72,12 @@ function accessComponent(c: Candidate, prefs: HuntPreferences, route: RouteOptio
   const walk = route.walkMeters;
   let v = 0.7;
   const target = prefs.effort === 'easy' ? [200, 900] : prefs.effort === 'balanced' ? [700, 1800] : [1500, 4000];
-  const est = route.routeKind === 'straight' ? ' est.' : '';
+  const est = route.routeKind === 'straight' || route.routeKind === 'network+offtrail' ? ' est.' : '';
   if (walk < target[0]) { v -= prefs.effort === 'deep' ? 0.25 : 0.05; neg.push(`Close to access (${Math.round(walk)} m${est}) — likely higher hunter traffic.`); }
   else if (walk > target[1]) { v -= 0.2; neg.push(`Walk (${(walk / 1609).toFixed(1)} mi${est}) is longer than your ${prefs.effort} preference.`); }
   else { v += 0.15; pos.push(`Walk length fits your ${prefs.effort} preference (${(walk / 1609).toFixed(1)} mi${est}).`); }
-  if (route.routeKind === 'network+offtrail') pos.push(`${(route.onNetworkMeters / 1609).toFixed(1)} mi on mapped road/trail, then ${route.offTrailMeters} m off-trail.`);
+  if (route.routeKind === 'terrain' || route.routeKind === 'lidar') pos.push(`Walkable route on ${route.routeKind === 'lidar' ? 'lidar' : '10 m'} terrain: ${(route.onNetworkMeters / 1609).toFixed(1)} mi on roads/trails, ${route.offTrailMeters} m cross-country, ≈${route.walkMinutes ?? '?'} min — avoids cliffs and steep side-hills.`);
+  else if (route.routeKind === 'network+offtrail') pos.push(`${(route.onNetworkMeters / 1609).toFixed(1)} mi on mapped road/trail, then ${route.offTrailMeters} m off-trail.`);
   else neg.push('No mapped road or trail leads near this zone — the walk is a straight-line estimate.');
   if (route.gainInMeters > 90) { v -= 0.1; neg.push(`~${Math.round(route.gainInMeters * 3.28)} ft of climbing on the way in.`); }
   if (route.maxSlopeDeg > 28) { v -= session === 'morning' ? 0.12 : 0.06; neg.push(`Steep ground (${route.maxSlopeDeg}°) along the approach — ${session === 'morning' ? 'hazardous in darkness' : 'plan exit after dark'}.`); }
@@ -247,7 +248,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
     weatherFactors: (comps[4] as ScoreComponent & { factors?: string[] }).factors ?? [],
     windAssessment: wind,
     recommendedWindow: { start: fmtTime(win.start), end: fmtTime(win.end) },
-    route: route ? { verifiedAccessPointId: route.accessPointId, name: route.name, distanceMeters: route.walkMeters, elevationGainMeters: route.gainInMeters, verification: route.verification, coord: route.coord, routeKind: route.routeKind, onNetworkMeters: route.onNetworkMeters, offTrailMeters: route.offTrailMeters, path: route.path, profile: route.profile } : undefined,
+    route: route ? { verifiedAccessPointId: route.accessPointId, name: route.name, distanceMeters: route.walkMeters, elevationGainMeters: route.gainInMeters, verification: route.verification, coord: route.coord, routeKind: route.routeKind, onNetworkMeters: route.onNetworkMeters, offTrailMeters: route.offTrailMeters, path: route.path, profile: route.profile, walkMinutes: route.walkMinutes, elevationSource: route.elevationSource, maxSlopeDeg: route.maxSlopeDeg } : undefined,
     reasons,
     warnings,
     improvements,

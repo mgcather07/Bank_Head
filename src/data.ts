@@ -40,6 +40,7 @@ export interface AppData extends Layers {
   zoneD: FeatureCollection<Polygon | MultiPolygon>;
   zoneDLines: FeatureCollection<LineString | MultiLineString>;
   counties: FeatureCollection<Polygon | MultiPolygon>;
+  water: FeatureCollection<Polygon | MultiPolygon>;
   registry: SourceRegistry;
 }
 
@@ -50,7 +51,7 @@ async function j<T>(file: string): Promise<T> {
 }
 
 export async function loadData(): Promise<AppData> {
-  const [wma, nfAdmin, ownership, wilderness, highways, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments, osmRoads, zoneD, zoneDLines, counties] = await Promise.all([
+  const [wma, nfAdmin, ownership, wilderness, highways, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments, osmRoads, zoneD, zoneDLines, counties, water] = await Promise.all([
     j<Layers['wma']>('wma.geojson'),
     j<Layers['nfAdmin']>('nf-admin.geojson'),
     j<Layers['ownership']>('ownership.geojson'),
@@ -70,7 +71,8 @@ export async function loadData(): Promise<AppData> {
     j<AppData['zoneD']>('deer-zone-d.geojson'),
     j<AppData['zoneDLines']>('deer-zone-boundary.geojson'),
     j<AppData['counties']>('counties.geojson'),
+    j<AppData['water']>('water-osm.geojson').catch(() => ({ type: 'FeatureCollection', features: [] }) as AppData['water']),
   ]);
   const candidates: Candidate[] = candidatesFc.features.map((f) => ({ geometry: f.geometry, properties: f.properties }));
-  return { wma, nfAdmin, ownership, wilderness, highways, candidates, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments, osmRoads, zoneD, zoneDLines, counties };
+  return { wma, nfAdmin, ownership, wilderness, highways, candidates, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments, osmRoads, zoneD, zoneDLines, counties, water };
 }

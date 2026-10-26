@@ -52,3 +52,8 @@ export function roadDistance(pt: [number, number], maxM = 600, idx: RoadIndex | 
   }
   return best <= maxM ? best : Infinity;
 }
+
+let pathIdx: RoadIndex | null = null;
+/** Index of roads AND trails, used to tell which parts of a route follow a mapped path. */
+export const setPathIndex = (r: RoadIndex | null) => { pathIdx = r; };
+export const pathDistance = (pt: [number, number], maxM = 60) => roadDistance(pt, maxM, pathIdx);

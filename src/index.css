@@ -349,3 +349,4 @@ button.rating { color: var(--text); font: inherit; cursor: pointer; }
 .pin-row { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding: 8px 0; }
 .pin-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 1.5px solid #000; }
 .pin-text { min-width: 0; font-size: .92rem; }
+.lidar-ok { color: #9de39a; }
