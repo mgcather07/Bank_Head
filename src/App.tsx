@@ -364,11 +364,43 @@ export default function App() {
   };
   const dayLabel = (d: string) => (d === localDate() ? `Today ${fmtDate(d, { month: 'numeric', day: 'numeric' })}` : d === addDays(localDate(), 1) ? `Tmrw ${fmtDate(d, { month: 'numeric', day: 'numeric' })}` : fmtDate(d, { weekday: 'short', month: 'numeric', day: 'numeric' }));
   const mapSun = selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun;
+  // When nothing on the map is legal for the chosen weapon/day, say why and when it opens.
+  const legalOnMap = useMemo(() => [...mapScores.values()].filter((v) => v != null).length, [mapScores]);
+  const closedNote = useMemo(() => {
+    if (!data || legalOnMap > 0) return null;
+    const probe = (date: string) => [
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'A', youthHunter: prefs.youthHunter }),
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'B', youthHunter: prefs.youthHunter }),
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'D', youthHunter: prefs.youthHunter }),
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'C', youthHunter: prefs.youthHunter }),
+    ];
+    let opens: string | null = null;
+    for (let i = 1; i <= 150 && !opens; i++) { const d = addDays(prefs.date, i); if (probe(d).some((r) => r.status === 'verified_allowed')) opens = d; }
+    const why = probe(prefs.date)[0].summary.replace(/ on \d{4}-\d{2}-\d{2}/, '');
+    const weaponName = ({ bow: 'Bow', crossbow: 'Crossbow', rifle: 'Rifle', muzzleloader: 'Muzzleloader' } as Record<string, string>)[prefs.weapon];
+    const target = prefs.target === 'doe' ? ' for does' : prefs.target === 'mature_buck' ? ' for bucks' : '';
+    return { title: `${weaponName}${target} isn't legal ${fmtDate(prefs.date, { weekday: 'short', month: 'numeric', day: 'numeric' })}`, opens: opens ? `Opens ${fmtDate(opens, { weekday: 'short', month: 'numeric', day: 'numeric' })}` : 'Not open again this season', why };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, legalOnMap, prefs.date, prefs.weapon, prefs.target, prefs.youthHunter]);
+  const closedBanner = closedNote && (
+    <div className="closed-banner" role="status">
+      <div><b>{closedNote.title}</b> · {closedNote.opens}</div>
+      <div className="tiny">{closedNote.why} Gray zones = not legal for your weapon that day.</div>
+      <div className="row">
+        {prefs.weapon !== 'bow' && <button className="btn btn-primary small" onClick={() => setPrefs({ ...prefs, weapon: 'bow', target: prefs.target })}>Use bow</button>}
+        {prefs.target === 'doe' && <button className="btn small" onClick={() => setPrefs({ ...prefs, target: 'any' })}>Any legal deer</button>}
+        <button className="btn small" onClick={() => setShowForm(true)}>Settings</button>
+      </div>
+    </div>
+  );
   const dayBar = (
         <div className="day-bar" aria-label="Day and session shown on the map">
           <button className="day-arrow" aria-label="Previous day" disabled={prefs.date <= localDate()} onClick={() => pickDay(addDays(prefs.date, -1))}>‹</button>
           <span className="day-label">{dayLabel(prefs.date)}</span>
           <button className="day-arrow" aria-label="Next day" disabled={prefs.date >= addDays(localDate(), 7)} onClick={() => pickDay(addDays(prefs.date, 1))}>›</button>
+          <select className="day-weapon" aria-label="Weapon" value={prefs.weapon} onChange={(e) => setPrefs({ ...prefs, weapon: e.target.value as HuntPreferences['weapon'] })}>
+            <option value="bow">Bow</option><option value="crossbow">Xbow</option><option value="rifle">Rifle</option><option value="muzzleloader">Muzzle</option>
+          </select>
           <span className="day-seg" role="radiogroup" aria-label="Session">
             {([['morning', 'AM'], ['evening', 'PM'], ['compare', 'Best']] as [HuntPreferences['session'], string][]).map(([v, l]) => (
               <button key={v} role="radio" aria-checked={mapSession === v} className={mapSession === v ? 'on' : ''} onClick={() => pickSession(v)}>{l}</button>
@@ -494,6 +526,7 @@ export default function App() {
       </header>
       <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} landFilter={landFilter} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
       <div className="map-top">
+        {!isMobile && closedBanner}
         {!isMobile && dayBar}
         <div className="sun-chip" aria-label="Sunrise and sunset">
           <span>☀↑ <b>{fmtTime(mapSun.sunrise)}</b></span>
@@ -524,7 +557,7 @@ export default function App() {
                 <label key={k} className="check small"><input type="checkbox" checked={layers[k]} onChange={(e) => setLayers({ ...layers, [k]: e.target.checked })} /> {LAYER_LABEL[k]}</label>
               ))}
               <div className="legend tiny">
-                <div><i style={{ background: '#5fbf5a' }} />High <i style={{ background: '#e0a43a' }} />Medium <i style={{ background: '#b0413e' }} />Low <i style={{ background: '#7a7a7a' }} />Not legal</div>
+                <div><i style={{ background: '#5fbf5a' }} />High <i style={{ background: '#e0a43a' }} />Medium <i style={{ background: '#b0413e' }} />Low <i style={{ background: '#7a7a7a' }} />Not legal for your weapon that day</div>
                 <div><i className="ln" style={{ background: '#f2b84b' }} />WMA <i className="ln" style={{ background: '#9fe08a' }} />National Forest <i className="ln" style={{ background: '#ffd84d' }} />WMA Zone A|B <i className="ln" style={{ background: '#c38bff' }} />Deer Zone C|D <i style={{ background: '#d64545', opacity: 0.5 }} />Private</div>
                 <div><i className="ln" style={{ background: '#e36b5b' }} />NFS trail <i className="ln" style={{ background: '#f0e6d2' }} />FS road <i style={{ background: '#3fa7ff', borderRadius: 8 }} />Access</div>
                 <div><i style={{ background: '#ff7828' }} />Burn ≤1 yr <i style={{ background: '#ffaa3c' }} />2–5 yr <i style={{ background: '#e6c878' }} />6–10 yr <i style={{ background: '#78c8ff' }} />Timber/mech. <i className="ln" style={{ background: '#7ad0ff' }} />Route <i className="ln" style={{ background: '#ffd27a' }} />Off-trail</div>
@@ -549,6 +582,7 @@ export default function App() {
       )}
       {isMobile && view === 'map' && !showLayers && !showCompass && (
         <div className="map-card">
+          {!inspect && closedBanner}
           {!inspect && dayBar}
           {inspect && jur && jurLegal ? (
             <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} onCheck={() => checkSpot(inspect)} checking={checking} />

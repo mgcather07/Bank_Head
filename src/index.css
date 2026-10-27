@@ -368,3 +368,10 @@ button.rating { color: var(--text); font: inherit; cursor: pointer; }
   .map-card .day-bar { margin: 0 0 6px; justify-content: space-between; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); }
   .map-card .day-label { flex: 1; }
 }
+.day-weapon { min-height: 30px; height: 30px; padding: 0 8px; border-radius: 999px; font-size: .76rem; font-weight: 700; background: var(--card-2); border: 1px solid var(--line); color: var(--text); margin-left: 2px; }
+.closed-banner { background: rgba(74, 31, 29, .96); border: 1px solid #c0504d; border-radius: 14px; padding: 10px 12px; margin-bottom: 6px; font-size: .88rem; display: grid; gap: 6px; max-width: 520px; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); }
+.closed-banner .tiny { color: #f3d3cf; }
+@media (max-width: 899px) {
+  .map-card .day-bar .day-label { min-width: 0; }
+  .map-card .day-seg button { padding: 5px 6px; }
+}
