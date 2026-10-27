@@ -88,7 +88,7 @@ export function PeekBar({ ratings, selected, sun }: { ratings: Record<Session, H
   return (
     <div className="peek">
       <div className="peek-scores"><span className="tiny muted">AM</span><ScorePill score={m?.score ?? null} legal={m?.legalStatus} /><span className="tiny muted">PM</span><ScorePill score={e?.score ?? null} legal={e?.legalStatus} /></div>
-      <div className="peek-text"><b>{m || e ? `${best} favored` : 'No legal zones'}</b><div className="tiny muted">{left ?? 'tap for top areas'}</div></div>
+      <div className="peek-text"><b>{sun && sun.date !== localDate() ? `${fmtDate(sun.date, { weekday: 'short' })}: ` : ''}{m || e ? `${best} favored` : 'No legal zones'}</b><div className="tiny muted">{left ?? 'tap for top areas'}</div></div>
     </div>
   );
 }

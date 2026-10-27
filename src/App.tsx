@@ -341,6 +341,42 @@ export default function App() {
     return d?.summary ?? null;
   };
 
+  // ---- map day / session picker ----
+  // The map shows prefs.date and prefs.session; a selected zone follows the picked day (and AM/PM when chosen).
+  const mapSession: HuntPreferences['session'] = prefs.session === 'morning' || prefs.session === 'evening' ? prefs.session : 'compare';
+  const pickDay = (date: string) => {
+    setPrefs({ ...prefs, date });
+    setSelectedKey((k) => (k ? { ...k, date } : k));
+    setWindHourIdx(0);
+  };
+  const pickSession = (session: HuntPreferences['session']) => {
+    setPrefs({ ...prefs, session });
+    if (session === 'morning' || session === 'evening') setSelectedKey((k) => (k ? { ...k, session } : k));
+    else if (selectedKey) {
+      // "Best": jump the selected zone to its best session that day
+      const c = findCand(selectedKey.id);
+      if (c) {
+        const best = (['morning', 'midday', 'evening'] as Session[]).map((s) => evaluateCandidate(c, s, { prefs: { ...prefs, date: selectedKey.date }, weather, pins, normals })).sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
+        setSelectedKey({ ...selectedKey, session: best.session });
+      }
+    }
+    setWindHourIdx(0);
+  };
+  const dayLabel = (d: string) => (d === localDate() ? `Today ${fmtDate(d, { month: 'numeric', day: 'numeric' })}` : d === addDays(localDate(), 1) ? `Tmrw ${fmtDate(d, { month: 'numeric', day: 'numeric' })}` : fmtDate(d, { weekday: 'short', month: 'numeric', day: 'numeric' }));
+  const mapSun = selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun;
+  const dayBar = (
+        <div className="day-bar" aria-label="Day and session shown on the map">
+          <button className="day-arrow" aria-label="Previous day" disabled={prefs.date <= localDate()} onClick={() => pickDay(addDays(prefs.date, -1))}>‹</button>
+          <span className="day-label">{dayLabel(prefs.date)}</span>
+          <button className="day-arrow" aria-label="Next day" disabled={prefs.date >= addDays(localDate(), 7)} onClick={() => pickDay(addDays(prefs.date, 1))}>›</button>
+          <span className="day-seg" role="radiogroup" aria-label="Session">
+            {([['morning', 'AM'], ['evening', 'PM'], ['compare', 'Best']] as [HuntPreferences['session'], string][]).map(([v, l]) => (
+              <button key={v} role="radio" aria-checked={mapSession === v} className={mapSession === v ? 'on' : ''} onClick={() => pickSession(v)}>{l}</button>
+            ))}
+          </span>
+        </div>
+  );
+
   // ---- check this spot ----
   const checkSpot = async (pt: [number, number], opts: { date?: string; session?: Session } = {}) => {
     if (!data) return;
@@ -458,19 +494,19 @@ export default function App() {
       </header>
       <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} landFilter={landFilter} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
       <div className="map-top">
+        {!isMobile && dayBar}
         <div className="sun-chip" aria-label="Sunrise and sunset">
-          <span>☀↑ <b>{fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).sunrise)}</b></span>
-          <span>☀↓ <b>{fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).sunset)}</b></span>
-          <span className="muted">legal {fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).legalStart)}–{fmtTime((selected ? sunDay(selected.huntDate, selected.center[0], selected.center[1]) : sun).legalEnd)}</span>
+          <span>☀↑ <b>{fmtTime(mapSun.sunrise)}</b></span>
+          <span>☀↓ <b>{fmtTime(mapSun.sunset)}</b></span>
+          <span className="muted">legal {fmtTime(mapSun.legalStart)}–{fmtTime(mapSun.legalEnd)}</span>
         </div>
-        <div className="type-chips" role="radiogroup" aria-label="Filter hunting areas by terrain type">
+        <div className="type-chips" role="group" aria-label="Filter hunting areas">
           {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
             <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => c.properties.type === t && (landFilter === 'all' || (landFilter === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma'))).length}</small> : null}</button>
           ))}
-        </div>
-        <div className="type-chips" role="radiogroup" aria-label="Filter by land">
-          {([['all', 'All land'], ['wma', 'Black Warrior WMA'], ['nf', 'National Forest']] as [LandFilter, string][]).map(([t, l]) => (
-            <button key={t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on land' : 'land'} onClick={() => setLandFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => (t === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma')).length}</small> : null}</button>
+          <i className="chip-sep" aria-hidden="true" />
+          {([['all', 'All land'], ['wma', 'WMA'], ['nf', 'Nat\'l Forest']] as [LandFilter, string][]).map(([t, l]) => (
+            <button key={'land-' + t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on land' : 'land'} onClick={() => setLandFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => (t === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma')).length}</small> : null}</button>
           ))}
         </div>
       </div>
@@ -513,13 +549,14 @@ export default function App() {
       )}
       {isMobile && view === 'map' && !showLayers && !showCompass && (
         <div className="map-card">
+          {!inspect && dayBar}
           {inspect && jur && jurLegal ? (
             <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} onCheck={() => checkSpot(inspect)} checking={checking} />
           ) : selected ? (
             <div className="card mini">
               <div className="row">
                 <ScorePill score={selected.score} legal={selected.legalStatus} />
-                <div className="grow mini-text"><b>{selected.candidate.label}</b> <span className="muted">{selected.areaId}</span><div className="tiny muted">{selected.landJurisdiction} · best {selected.session} · wind risk {selected.windAssessment.risk}</div></div>
+                <div className="grow mini-text"><b>{selected.candidate.label}</b> <span className="muted">{selected.areaId}</span><div className="tiny muted">{selected.landJurisdiction} · {fmtDate(selected.huntDate, { weekday: 'short' })} {selected.session === 'morning' ? 'AM' : selected.session === 'evening' ? 'PM' : 'midday'} · wind risk {selected.windAssessment.risk}</div></div>
                 <button className="btn btn-ghost small" aria-label="Clear selection" onClick={() => setSelectedKey(null)}>✕</button>
               </div>
               <div className="tiny muted mini-sun">☀↑ {fmtTime(timeline?.sun.sunrise)} · ☀↓ {fmtTime(timeline?.sun.sunset)} · <span className="setup-key">✕</span> = set up here</div>
