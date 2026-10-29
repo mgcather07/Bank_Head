@@ -375,3 +375,11 @@ button.rating { color: var(--text); font: inherit; cursor: pointer; }
   .map-card .day-bar .day-label { min-width: 0; }
   .map-card .day-seg button { padding: 5px 6px; }
 }
+
+/* ---- youth / kid mode ---- */
+.youth-box { background: #172019; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 10px 0; }
+.youth-box .check { margin: 4px 0; }
+.youth-banner { background: rgba(31, 59, 35, .96); border: 1px solid #5fbf5a; border-radius: 14px; padding: 10px 12px; margin-bottom: 6px; font-size: .88rem; display: grid; gap: 6px; max-width: 520px; box-shadow: 0 6px 18px rgba(0, 0, 0, .45); }
+.kid-chip { flex: none; background: rgba(14, 20, 16, .9); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: .82rem; font-weight: 600; min-height: 34px; cursor: pointer; white-space: nowrap; }
+.kid-chip.on { background: #5fbf5a; color: #0c1a0b; border-color: #5fbf5a; }
+.type-chips.inline button.on { background: var(--accent); color: #1a1407; border-color: var(--accent); }

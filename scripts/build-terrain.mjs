@@ -68,14 +68,14 @@ const fdist = await download(
 const fdCsv = (await fs.readFile(path.join(RAW, 'LF2024_FDist.csv'), 'utf8')).split('\n').slice(1);
 const fdInfo = new Map();
 for (const line of fdCsv) { const c = line.split(','); if (c.length > 4 && Number(c[0]) > 0) fdInfo.set(Number(c[0]), { type: c[1], severity: c[2], age: c[3] }); }
-const DIST = new Uint8Array(W * H); // 0 none, 1 fire ≤1y, 2 fire 2–5y, 3 fire 6–10y, 4 mech/harvest ≤5y, 5 mech 6–10y, 6 other
+const DIST = new Uint8Array(W * H); // 0 none, 1 fire ≤1y, 2 fire 2–5y, 3 fire 6–10y, 4 cut/thinning ≤1y, 5 cut 2–5y (regrowth = browse), 6 cut 6–10y (thick regrowth = bedding), 7 other
 for (let i = 0; i < W * H; i++) {
   const d = fdInfo.get(fdist[i]);
   if (!d) continue;
   const recent = d.age === 'One Year', mid = d.age === 'Two to Five Years';
   if (/Fire/i.test(d.type)) DIST[i] = recent ? 1 : mid ? 2 : 3;
-  else if (/Mechanical|Harvest|Clearcut|Thinning|Mastication/i.test(d.type)) DIST[i] = recent || mid ? 4 : 5;
-  else DIST[i] = 6;
+  else if (/Mechanical|Harvest|Clearcut|Thinning|Mastication/i.test(d.type)) DIST[i] = recent ? 4 : mid ? 5 : 6;
+  else DIST[i] = 7;
 }
 
 // ---------- EVT lookup ----------
@@ -455,7 +455,7 @@ for (const r of raw) {
   // context within 300 m
   const counts = { saddle: 0, bench: 0, spur: 0, bottom: 0, draw: 0, steep: 0, stream: 0, ridge: 0 };
   const hab = [0, 0, 0, 0, 0, 0, 0];
-  const dist = [0, 0, 0, 0, 0, 0, 0];
+  const dist = [0, 0, 0, 0, 0, 0, 0, 0];
   let oak = 0, total = 0, zmin = Infinity, zmax = -Infinity, slopeSum = 0, edges = 0;
   const aspects = [];
   const upCells = [], downCells = [];
@@ -480,8 +480,8 @@ for (const r of raw) {
   });
   // bedding-cover hypothesis: upper, steeper, non-open cells within 600 m; food/water hypothesis: bottoms / openings / streams
   window(cx, cy, 600, (i, x, y) => {
-    if ((tL[i] > 0.5 && slope[i] > 8 && slope[i] < 30 && HAB[i] >= 1 && HAB[i] <= 3)) upCells.push([x, y]);
-    if (bottom[i] || HAB[i] === 4 || HAB[i] === 6 || isStream[i]) downCells.push([x, y]);
+    if ((tL[i] > 0.5 && slope[i] > 8 && slope[i] < 30 && HAB[i] >= 1 && HAB[i] <= 3) || DIST[i] === 6) upCells.push([x, y]);
+    if (bottom[i] || HAB[i] === 4 || HAB[i] === 6 || isStream[i] || DIST[i] === 4 || DIST[i] === 5) downCells.push([x, y]);
   });
   const beddingBearing = upCells.length >= 10 ? circMean(upCells.map(([x, y]) => bearing(cx, cy, x, y))) : null;
   const foodWaterBearing = downCells.length >= 10 ? circMean(downCells.map(([x, y]) => bearing(cx, cy, x, y))) : null;
@@ -490,7 +490,7 @@ for (const r of raw) {
   const habitat = {
     hardwood: pct(hab[1]), conifer: pct(hab[2]), mixed: pct(hab[3]), earlySuccessional: pct(hab[4]), riparian: pct(hab[5]), developedAg: pct(hab[6]), oak: pct(oak), edgeDensity: edges / total,
   };
-  const disturbance = { fireRecent: pct(dist[1]), fireMid: pct(dist[2]), fireOld: pct(dist[3]), mechRecent: pct(dist[4]), mechOld: pct(dist[5]), other: pct(dist[6]) };
+  const disturbance = { fireRecent: pct(dist[1]), fireMid: pct(dist[2]), fireOld: pct(dist[3]), cutNew: pct(dist[4]), cutRecent: pct(dist[5]), cutOld: pct(dist[6]), mechRecent: pct(dist[4] + dist[5]), mechOld: pct(dist[6]), other: pct(dist[7]) };
   const relief = zmax - zmin;
   const asp = circMean(aspects);
   const featureTypes = Object.entries({ saddle: counts.saddle >= 3, bench: counts.bench >= 6, spur: counts.spur >= 5, bottom: counts.bottom >= 10, draw: counts.draw >= 8 }).filter(([, v]) => v).map(([k]) => k);
@@ -505,7 +505,8 @@ for (const r of raw) {
   if (habitat.earlySuccessional > 0.03 && habitat.earlySuccessional < 0.5) t += 0.05;
   if (distStream[r.cx + r.cy * W] > 40 && distStream[r.cx + r.cy * W] < 400) t += 0.03;
   // Recent fire (2–5 yr) and recent mechanical treatment create browse and edge; 1-yr burns are bare and get less credit.
-  const distBonus = Math.min(0.08, disturbance.fireMid * 0.2 + disturbance.mechRecent * 0.2 + disturbance.fireRecent * 0.08 + disturbance.fireOld * 0.05);
+  // recent cuts (2–5 yr) = browse; older cuts (6–10 yr) = bedding cover; both score, and an older cut next to a recent one is the classic edge
+  const distBonus = Math.min(0.1, disturbance.fireMid * 0.2 + disturbance.cutRecent * 0.25 + disturbance.cutNew * 0.1 + disturbance.cutOld * 0.15 + disturbance.fireRecent * 0.08 + disturbance.fireOld * 0.05 + (disturbance.cutRecent > 0.05 && disturbance.cutOld > 0.05 ? 0.04 : 0));
   t += distBonus;
   if (steepFrac > 0.35) t -= 0.1;
   if (habitat.developedAg > 0.4) t -= 0.15;
@@ -685,7 +686,7 @@ await fs.writeFile(path.join(OUT, 'streams.geojson'), JSON.stringify(streamsFc))
 // ---------- disturbance PNG (LANDFIRE FDist) ----------
 {
   const png = new PNG({ width: W, height: H });
-  const colors = { 1: [255, 120, 40, 190], 2: [255, 170, 60, 170], 3: [230, 200, 120, 130], 4: [120, 200, 255, 170], 5: [150, 190, 220, 120], 6: [200, 160, 220, 120] };
+  const colors = { 1: [255, 120, 40, 190], 2: [255, 170, 60, 170], 3: [230, 200, 120, 130], 4: [170, 230, 255, 170], 5: [90, 190, 255, 180], 6: [60, 110, 200, 160], 7: [200, 160, 220, 120] };
   for (let i = 0; i < W * H; i++) png.data.set(colors[DIST[i]] ?? [0, 0, 0, 0], i * 4);
   await fs.writeFile(path.join(OUT, 'disturbance.png'), PNG.sync.write(png));
 }

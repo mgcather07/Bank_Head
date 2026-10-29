@@ -291,15 +291,16 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
     const h = habOf(g, i), sl = slopeAt(g, i);
     const b = bearingTo(pt, [lonOf(g, x), latOf(g, y)]);
     if (x === c.x && y === c.y) return;
-    if (tpiLAt(g, i) > 0.5 && sl > 8 && sl < 30 && h >= 1 && h <= 3) up.push(b);
-    if (g.mask[i] & (M.bottom | M.stream) || h === 4 || h === 6) down.push(b);
+    const dc = distOf(g, i);
+    if ((tpiLAt(g, i) > 0.5 && sl > 8 && sl < 30 && h >= 1 && h <= 3) || dc === 6) up.push(b);
+    if (g.mask[i] & (M.bottom | M.stream) || h === 4 || h === 6 || dc === 4 || dc === 5) down.push(b);
   });
   // thresholds are the build's full-res counts scaled to quarter-area cells
   const bed = up.length >= 3 ? circMean(up) : null;
   const food = down.length >= 3 ? circMean(down) : null;
   const pct = (n: number) => n / Math.max(1, total);
   const habitat = { hardwood: pct(hab[1]), conifer: pct(hab[2]), mixed: pct(hab[3]), earlySuccessional: pct(hab[4]), riparian: pct(hab[5]), developedAg: pct(hab[6]), oak: pct(oak), edgeDensity: edges / Math.max(1, total) / 2 };
-  const disturbance = { fireRecent: pct(dist[1]), fireMid: pct(dist[2]), fireOld: pct(dist[3]), mechRecent: pct(dist[4]), mechOld: pct(dist[5]), other: pct(dist[6]) };
+  const disturbance = { fireRecent: pct(dist[1]), fireMid: pct(dist[2]), fireOld: pct(dist[3]), cutNew: pct(dist[4]), cutRecent: pct(dist[5]), cutOld: pct(dist[6]), mechRecent: pct(dist[4] + dist[5]), mechOld: pct(dist[6]), other: pct(dist[7]) };
   const featureTypes = Object.entries({ saddle: counts.saddle >= 1, bench: counts.bench >= 2, spur: counts.spur >= 2, bottom: counts.bottom >= 3, draw: counts.draw >= 2 }).filter(([, v]) => v).map(([k]) => k);
   const steepFrac = pct(counts.steep);
   const asp = circMean(aspects);
@@ -311,7 +312,7 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
   if (habitat.earlySuccessional > 0.03 && habitat.earlySuccessional < 0.5) t += 0.05;
   const dStream = g.distStream[c.i] * 8;
   if (dStream > 40 && dStream < 400) t += 0.03;
-  t += Math.min(0.08, disturbance.fireMid * 0.2 + disturbance.mechRecent * 0.2 + disturbance.fireRecent * 0.08 + disturbance.fireOld * 0.05);
+  t += Math.min(0.1, disturbance.fireMid * 0.2 + disturbance.cutRecent * 0.25 + disturbance.cutNew * 0.1 + disturbance.cutOld * 0.15 + disturbance.fireRecent * 0.08 + disturbance.fireOld * 0.05 + (disturbance.cutRecent > 0.05 && disturbance.cutOld > 0.05 ? 0.04 : 0));
   if (steepFrac > 0.35) t -= 0.1;
   if (habitat.developedAg > 0.4) t -= 0.15;
   const terrainScore = Math.round(Math.max(0, Math.min(1, t)) * 100);

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { Candidate } from './types';
+import type { Candidate, HuntRecommendation } from './types';
 import { evaluateLegal, ZONE_B_ANTLER_RULE, isCheckStationDay } from './regulations';
 import { angleDiff, assessWind, circularStats, downwindBearing, exposure, thermalAt } from './wind';
 import { addDays, chicagoTime, fmtTime, localDate, sessionWindows, sunDay, tzOffsetMinutes } from './time';
@@ -620,5 +620,45 @@ describe('terrain pathfinder', () => {
     expect(terrain.length / candidates.flatMap((c) => c.properties.routes).length).toBeGreaterThan(0.9);
     expect(terrain.filter((r) => r.maxSlopeDeg >= CLIFF_DEG)).toHaveLength(0);
     for (const r of terrain.slice(0, 200)) { expect(r.walkMinutes).toBeGreaterThan(0); expect(r.walkMeters).toBeGreaterThanOrEqual(r.straightLineMeters * 0.99); }
+  });
+});
+
+// ---------------- Kid / youth mode ----------------
+describe('kid-friendly mode', () => {
+  const base = { date: '2026-10-31', session: 'compare' as const, weapon: 'rifle' as const, target: 'any' as const, maxWalkMeters: 1000, stand: 'ground' as const, effort: 'easy' as const, youthHunter: true, start: null };
+  it('youth hunters with a rifle get legal zones on youth day', () => {
+    const r = rankCandidates(candidates, { prefs: { ...base, withKid: true }, weather: null, pins: [] });
+    expect(r.recommendations.length).toBeGreaterThan(0);
+    for (const x of r.recommendations) expect(x.legalStatus).toBe('verified_allowed');
+  });
+  it('only ranks short, gentle walks with a kid', () => {
+    const r = rankCandidates(candidates, { prefs: { ...base, withKid: true }, weather: null, pins: [] });
+    for (const x of r.recommendations) {
+      expect(x.route!.walkMinutes ?? 0).toBeLessThanOrEqual(15);
+      expect(x.route!.maxSlopeDeg ?? 0).toBeLessThanOrEqual(28);
+    }
+  });
+  it('kid mode favors shorter walks than normal mode', () => {
+    const avg = (rs: HuntRecommendation[]) => rs.reduce((a, x) => a + (x.route?.walkMinutes ?? 0), 0) / Math.max(1, rs.length);
+    const kid = rankCandidates(candidates, { prefs: { ...base, withKid: true }, weather: null, pins: [] }, 10).recommendations;
+    const adult = rankCandidates(candidates, { prefs: { ...base, withKid: false, effort: 'balanced', maxWalkMeters: 3200 }, weather: null, pins: [] }, 10).recommendations;
+    expect(avg(kid)).toBeLessThan(avg(adult));
+  });
+  it('without youth-hunter, rifle is not legal on the WMA youth day', () => {
+    const r = rankCandidates(candidates, { prefs: { ...base, youthHunter: false }, weather: null, pins: [] });
+    expect(r.recommendations.every((x) => x.legalStatus === 'verified_allowed')).toBe(true);
+    expect(r.recommendations.length).toBe(0);
+  });
+});
+
+describe('clear-cut ages', () => {
+  it('splits timber disturbance into new / recent / older cuts', () => {
+    const withCuts = candidates.filter((c) => c.properties.disturbance.cutRecent != null);
+    expect(withCuts.length).toBe(candidates.length);
+    for (const c of candidates.slice(0, 50)) {
+      const d = c.properties.disturbance;
+      expect((d.cutNew ?? 0) + (d.cutRecent ?? 0)).toBeCloseTo(d.mechRecent, 3);
+      expect(d.cutOld ?? 0).toBeCloseTo(d.mechOld, 3);
+    }
   });
 });

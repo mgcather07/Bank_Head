@@ -1,8 +1,8 @@
 {
-  "generated": "2026-10-26T21:01:23.221Z",
+  "generated": "2026-10-29T01:35:38.276Z",
   "terrain": {
     "algorithmVersion": "terrain-1.2.0",
-    "generated": "2026-10-26T03:54:49.322Z",
+    "generated": "2026-10-29T01:33:41.714Z",
     "parameters": {
       "tpiSmallRadiusCells": 5,
       "tpiLargeRadiusCells": 25,
@@ -26,12 +26,12 @@
         "roadCrosses": 18,
         "tooLarge": 0
       },
-      "mergedDuplicates": 604,
-      "candidates": 871,
+      "mergedDuplicates": 606,
+      "candidates": 869,
       "byType": {
         "saddle": 82,
         "bench": 112,
-        "spur": 584,
+        "spur": 582,
         "bottom": 93
       },
       "accessPoints": 1262,

@@ -18,6 +18,8 @@ export interface HuntPreferences {
   stand: StandType;
   effort: Effort;
   youthHunter: boolean;
+  /** Taking a kid: short flat walks, open ground, close to the truck, ground-blind friendly. */
+  withKid?: boolean;
   start: [number, number] | null; // lon,lat of starting point (GPS / pin)
 }
 
@@ -73,7 +75,7 @@ export interface CandidateProps {
     oak: number;
     edgeDensity: number;
   };
-  disturbance: { fireRecent: number; fireMid: number; fireOld: number; mechRecent: number; mechOld: number; other: number };
+  disturbance: { fireRecent: number; fireMid: number; fireOld: number; cutNew?: number; cutRecent?: number; cutOld?: number; mechRecent: number; mechOld: number; other: number };
   beddingCoverBearing: number | null;
   beddingCoverConsistency: number | null;
   foodWaterBearing: number | null;

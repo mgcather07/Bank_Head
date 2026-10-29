@@ -132,7 +132,11 @@ export function HuntForm({ prefs, setPrefs, onGps, gpsStatus, pickingStart, setP
         {prefs.start && <button className="btn btn-ghost" onClick={() => set('start', null)}>Clear</button>}
       </div>
       <p className="muted small">{prefs.start ? `Start: ${prefs.start[1].toFixed(5)}, ${prefs.start[0].toFixed(5)}` : 'No start point — nearest access point is used.'} {gpsStatus}</p>
-      <label className="check"><input type="checkbox" checked={prefs.youthHunter} onChange={(e) => set('youthHunter', e.target.checked)} /> Youth hunter (under 16, supervised)</label>
+      <div className="youth-box">
+        <label className="check"><input type="checkbox" checked={!!prefs.withKid} onChange={(e) => setPrefs(e.target.checked ? { ...prefs, withKid: true, youthHunter: true, effort: 'easy', maxWalkMeters: 1000, stand: 'ground' } : { ...prefs, withKid: false })} /> <b>Taking a kid</b></label>
+        <p className="tiny muted">Short, flat walks (≤ ~12 min), open ground to see and shoot, close to the truck, ground-blind friendly. Turns on youth-hunter rules so rifle shows as legal on youth days.</p>
+        <label className="check"><input type="checkbox" checked={prefs.youthHunter} onChange={(e) => set('youthHunter', e.target.checked)} /> Youth hunter (under 16, supervised)</label>
+      </div>
       <button className="btn btn-primary big" onClick={onRun}>Show my best hunts</button>
     </section>
   );
@@ -226,7 +230,7 @@ export function RecCard({ rec, rank, onOpen, active }: { rec: HuntRecommendation
       <div className="rec-body">
         <div className="rec-top"><div className="rec-title">{p.label} <span className="muted rec-id">{rec.areaId}</span></div><ScorePill score={rec.score} legal={rec.legalStatus} /></div>
         <div className="small">{rec.landJurisdiction} · {SESSION_LABEL[rec.session]} <span className="nowrap">{rec.recommendedWindow?.start}–{rec.recommendedWindow?.end}</span></div>
-        <div className="small muted">{rec.route ? `${mi(rec.route.distanceMeters)} est. walk from ${rec.route.name}` : 'No access route'} · wind risk {rec.windAssessment.risk}</div>
+        <div className="small muted">{rec.route ? `${mi(rec.route.distanceMeters)}${rec.route.walkMinutes ? ` · ${rec.route.walkMinutes} min` : ''} from ${rec.route.name}` : 'No access route'} · wind risk {rec.windAssessment.risk}</div>
         <div className="row tags"><LegalBadge status={rec.legalStatus} /><ConfidenceTag c={rec.confidence} /></div>
         {rec.reasons[0] && <div className="small reason">{rec.reasons[0]}</div>}
       </div>

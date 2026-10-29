@@ -56,7 +56,11 @@ function terrainComponent(c: Candidate): ScoreComponent {
     if (d.fireMid > 0.1) pos.push(`Burned 2–5 years ago on ${pct(d.fireMid)} of the area (LANDFIRE) — fresh browse and understory cover.`);
     else if (d.fireRecent > 0.1) pos.push(`Burned within the last year on ${pct(d.fireRecent)} (LANDFIRE) — open understory, browse still recovering.`);
     else if (d.fireOld > 0.15) pos.push(`Burned 6–10 years ago on ${pct(d.fireOld)} (LANDFIRE).`);
-    if (d.mechRecent > 0.1) pos.push(`Recent timber/mechanical treatment on ${pct(d.mechRecent)} (LANDFIRE) — early-successional edge.`);
+    if ((d.cutRecent ?? 0) > 0.08) pos.push(`Clear cut / thinning 2–5 years old on ${pct(d.cutRecent!)} (LANDFIRE) — regrowth browse, deer feed here.`);
+    else if ((d.cutNew ?? 0) > 0.08) pos.push(`Fresh cut (≤1 yr) on ${pct(d.cutNew!)} — opening up; browse still coming in.`);
+    if ((d.cutOld ?? 0) > 0.08) pos.push(`Older cut 6–10 years on ${pct(d.cutOld!)} (LANDFIRE) — thick regrowth, likely bedding cover.`);
+    if ((d.cutRecent ?? 0) > 0.05 && (d.cutOld ?? 0) > 0.05) pos.push('Young cut next to an older cut — bedding-to-feeding edge.');
+    if (!d.cutRecent && !d.cutOld && d.mechRecent > 0.1) pos.push(`Recent timber/mechanical treatment on ${pct(d.mechRecent)} (LANDFIRE) — early-successional edge.`);
   }
   if (p.steepFraction > 0.35) neg.push(`${pct(p.steepFraction)} of the area is steeper than 25°.`);
   if (p.habitat.conifer > 0.6) neg.push(`Conifer-dominant (${pct(p.habitat.conifer)}) — limited mast potential.`);
@@ -71,6 +75,23 @@ function accessComponent(c: Candidate, prefs: HuntPreferences, route: RouteOptio
   if (!route) return { key: 'access', label: 'Access & pressure', weight: WEIGHTS.access, value: 0.2, positives: [], negatives: ['No verified access point within range.'] };
   const walk = route.walkMeters;
   let v = 0.7;
+  const kid = !!prefs.withKid;
+  const walkMin = route.walkMinutes ?? Math.round(walk / 50);
+  if (kid) {
+    // taking a kid: short, flat, easy to find, close to the truck — and a place a kid can sit still and see
+    if (walkMin <= 8) { v += 0.2; pos.push(`Short walk for a kid (≈${walkMin} min).`); }
+    else if (walkMin <= 14) { v += 0.05; pos.push(`Manageable walk with a kid (≈${walkMin} min).`); }
+    else { v -= 0.35; neg.push(`Walk is ≈${walkMin} min — long for a kid in the dark.`); }
+    if ((route.gainInMeters ?? 0) > 35) { v -= 0.15; neg.push(`~${Math.round((route.gainInMeters ?? 0) * 3.28)} ft of climbing on the way in.`); }
+    if (route.maxSlopeDeg > 20) { v -= 0.15; neg.push(`Steep ground (${route.maxSlopeDeg}°) on the walk — hard footing for a kid.`); }
+    else pos.push('Gentle footing the whole way in.');
+    if (route.routeKind === 'straight') { v -= 0.1; neg.push('No mapped route — bushwhacking with a kid is a hard start.'); }
+    if (p.steepFraction > 0.2) { v -= 0.1; neg.push('Steep ground around the spot.'); }
+    if (p.habitat.earlySuccessional > 0.08 || (p.disturbance?.cutRecent ?? 0) > 0.08 || (p.disturbance?.cutNew ?? 0) > 0.08) { v += 0.1; pos.push('Open ground / young cut nearby — room to see deer coming and a clear shot.'); }
+    if (p.type === 'bottom' || p.type === 'bench') pos.push(`${p.label}: level enough for a ground blind.`);
+    if (p.distRoadM > 1200) neg.push('Far from any road — a long carry if you get one down.');
+    return { key: 'access', label: 'Access & pressure', weight: WEIGHTS.access, value: clamp(v), positives: pos, negatives: neg };
+  }
   const target = prefs.effort === 'easy' ? [200, 900] : prefs.effort === 'balanced' ? [700, 1800] : [1500, 4000];
   const est = route.routeKind === 'straight' || route.routeKind === 'network+offtrail' ? ' est.' : '';
   if (walk < target[0]) { v -= prefs.effort === 'deep' ? 0.25 : 0.05; neg.push(`Close to access (${Math.round(walk)} m${est}) — likely higher hunter traffic.`); }
@@ -198,6 +219,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   if (legal.status !== 'verified_allowed') warnings.push(legal.summary);
   if (p.type === 'spot' && p.distRoadM < 100) warnings.push(`Road ${p.distRoadM} m away — you can't hunt from or across a public road; set up well off it.`);
   if (p.wilderness) warnings.push('Sipsey Wilderness — no motorized/mechanized equipment (incl. game carts); pack-in/pack-out.');
+  if (prefs.withKid && route && (route.walkMinutes ?? 0) > 15) warnings.push('Long walk for a kid — pick a closer spot.');
   if (prefs.stand === 'climber' || prefs.stand === 'hang_on' || prefs.stand === 'saddle') warnings.push('Tree suitability cannot be verified remotely — inspect trees on site; full-body harness and tether required (WMA rule).');
   if (sun && Date.now() > win.end && date === localDate()) warnings.push('This session has already ended today.');
 
@@ -287,6 +309,7 @@ export function rankCandidates(cands: Candidate[], ctx: ScoreContext, limit = 5)
       const r = evaluateCandidate(c, s, ctx);
       if (r.legalStatus === 'verified_prohibited') { excluded.prohibited++; continue; }
       if (r.route && r.route.distanceMeters > ctx.prefs.maxWalkMeters) { excluded.overDistance++; continue; }
+      if (ctx.prefs.withKid && r.route && ((r.route.walkMinutes ?? 99) > 15 || (r.route.maxSlopeDeg ?? 0) > 28)) { excluded.overDistance++; continue; }
       if (r.legalStatus === 'requires_verification') excluded.verification++;
       bySession[s].push(r);
       all.push(r);

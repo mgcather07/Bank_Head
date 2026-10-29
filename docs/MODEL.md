@@ -86,3 +86,17 @@ Routes are least-effort walking paths (`src/engine/pathfind.ts`), not straight l
 - **Refined (online):** opening a zone or checked spot fetches ~4 m lidar elevation around it from USGS and re-routes (`src/engine/lidar.ts`, about 1 s). At this resolution old logging roads, skid trails and benches are the easiest lines on a slope, so the route follows them where they exist. A **Lidar hillshade** map layer shows those features.
 
 These are suggestions over mapped terrain. They don't know about blowdowns, briars, fences or high water, and road/trail centerlines are inventory data, not field-checked.
+
+## Clear cuts and kid-friendly mode
+
+**Clear-cut ages** come from LANDFIRE FDist timber/mechanical disturbance:
+- **≤1 yr** is opening up.
+- **2–5 yr** is regrowth browse. It counts toward the food/feeding side.
+- **6–10 yr** is thick regrowth. It counts toward the bedding side.
+
+A young cut next to an older cut earns a small edge bonus. The wind and setup logic uses these bedding/food sides, so a zone near an old cut keeps your scent off it.
+
+**Taking a kid** (`withKid`) turns on youth-hunter rules and changes ranking:
+- Walks over 15 min or crossing ground steeper than 28° are excluded.
+- Short (≤ 8 min), gentle walks and open ground or young cuts (room to see and shoot) score higher.
+- The plan adds ground-blind / rest / ranging tips and the youth supervision rule.

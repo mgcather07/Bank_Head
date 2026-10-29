@@ -382,6 +382,17 @@ export default function App() {
     return { title: `${weaponName}${target} isn't legal ${fmtDate(prefs.date, { weekday: 'short', month: 'numeric', day: 'numeric' })}`, opens: opens ? `Opens ${fmtDate(opens, { weekday: 'short', month: 'numeric', day: 'numeric' })}` : 'Not open again this season', why };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, legalOnMap, prefs.date, prefs.weapon, prefs.target, prefs.youthHunter]);
+  // Youth gun weekend: Oct 30–Nov 2 (Zone D / NF) and Oct 31–Nov 1 (WMA). Offer the one-tap kid setup.
+  const youthDay = (d: string) => d >= '2026-10-30' && d <= '2026-11-02';
+  const youthBanner = youthDay(prefs.date) && !prefs.withKid && (
+    <div className="youth-banner" role="status">
+      <div><b>Youth gun hunt {fmtDate(prefs.date, { weekday: 'short', month: 'numeric', day: 'numeric' })}</b> · kids under 16 with a supervisor{prefs.date === '2026-10-30' || prefs.date === '2026-11-02' ? ' (National Forest only this day)' : ''}</div>
+      <div className="row"><button className="btn btn-primary small" onClick={() => setPrefs({ ...prefs, withKid: true, youthHunter: true, weapon: 'rifle', effort: 'easy', maxWalkMeters: 1000, stand: 'ground', session: 'compare' })}>Set up for a kid</button><button className="btn small" onClick={() => setShowForm(true)}>Settings</button></div>
+    </div>
+  );
+  const kidChip = (
+    <button className={`kid-chip ${prefs.withKid ? 'on' : ''}`} aria-pressed={!!prefs.withKid} onClick={() => setPrefs(prefs.withKid ? { ...prefs, withKid: false } : { ...prefs, withKid: true, youthHunter: true, effort: 'easy', maxWalkMeters: 1000, stand: 'ground' })}>🧒 Kid-friendly{prefs.withKid ? ' ✓' : ''}</button>
+  );
   const closedBanner = closedNote && (
     <div className="closed-banner" role="status">
       <div><b>{closedNote.title}</b> · {closedNote.opens}</div>
@@ -527,6 +538,7 @@ export default function App() {
       <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} landFilter={landFilter} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
       <div className="map-top">
         {!isMobile && closedBanner}
+        {!isMobile && youthBanner}
         {!isMobile && dayBar}
         <div className="sun-chip" aria-label="Sunrise and sunset">
           <span>☀↑ <b>{fmtTime(mapSun.sunrise)}</b></span>
@@ -537,6 +549,8 @@ export default function App() {
           {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
             <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => c.properties.type === t && (landFilter === 'all' || (landFilter === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma'))).length}</small> : null}</button>
           ))}
+          <i className="chip-sep" aria-hidden="true" />
+          {kidChip}
           <i className="chip-sep" aria-hidden="true" />
           {([['all', 'All land'], ['wma', 'WMA'], ['nf', 'Nat\'l Forest']] as [LandFilter, string][]).map(([t, l]) => (
             <button key={'land-' + t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on land' : 'land'} onClick={() => setLandFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => (t === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma')).length}</small> : null}</button>
@@ -560,7 +574,8 @@ export default function App() {
                 <div><i style={{ background: '#5fbf5a' }} />High <i style={{ background: '#e0a43a' }} />Medium <i style={{ background: '#b0413e' }} />Low <i style={{ background: '#7a7a7a' }} />Not legal for your weapon that day</div>
                 <div><i className="ln" style={{ background: '#f2b84b' }} />WMA <i className="ln" style={{ background: '#9fe08a' }} />National Forest <i className="ln" style={{ background: '#ffd84d' }} />WMA Zone A|B <i className="ln" style={{ background: '#c38bff' }} />Deer Zone C|D <i style={{ background: '#d64545', opacity: 0.5 }} />Private</div>
                 <div><i className="ln" style={{ background: '#e36b5b' }} />NFS trail <i className="ln" style={{ background: '#f0e6d2' }} />FS road <i style={{ background: '#3fa7ff', borderRadius: 8 }} />Access</div>
-                <div><i style={{ background: '#ff7828' }} />Burn ≤1 yr <i style={{ background: '#ffaa3c' }} />2–5 yr <i style={{ background: '#e6c878' }} />6–10 yr <i style={{ background: '#78c8ff' }} />Timber/mech. <i className="ln" style={{ background: '#7ad0ff' }} />Route <i className="ln" style={{ background: '#ffd27a' }} />Off-trail</div>
+                <div><i style={{ background: '#ff7828' }} />Burn ≤1 yr <i style={{ background: '#ffaa3c' }} />2–5 yr <i style={{ background: '#e6c878' }} />6–10 yr</div>
+                <div><i style={{ background: '#aae6ff' }} />Cut ≤1 yr <i style={{ background: '#5abeff' }} />Cut 2–5 yr (browse) <i style={{ background: '#3c6ec8' }} />Cut 6–10 yr (bedding) <i className="ln" style={{ background: '#7ad0ff' }} />Route <i className="ln" style={{ background: '#ffd27a' }} />Off-trail</div>
               </div>
               <button className="btn btn-primary layers-done" onClick={() => setShowLayers(false)}>Done</button>
             </div>
@@ -583,6 +598,7 @@ export default function App() {
       {isMobile && view === 'map' && !showLayers && !showCompass && (
         <div className="map-card">
           {!inspect && closedBanner}
+          {!inspect && youthBanner}
           {!inspect && dayBar}
           {inspect && jur && jurLegal ? (
             <InspectCard pt={inspect} j={jur} legalSummary={jurLegal.summary} onClose={() => setInspect(null)} onAddPin={(kind) => { addPin({ kind, coord: inspect, note: '' }); setInspect(null); }} onSetStart={() => { setPrefs({ ...prefs, start: inspect }); setInspect(null); }} onCheck={() => checkSpot(inspect)} checking={checking} />
@@ -663,7 +679,8 @@ export default function App() {
                   <SettingsBar prefs={prefs} onOpen={() => setShowForm(true)} />
                   <TodayCard date={prefs.date} sun={sun} weather={weather} weatherError={weatherError} alerts={alerts} alertsError={alertsError} ratings={ratings} onRefresh={() => refreshWeather(true)} refreshing={refreshing} selected={null} windHourIdx={windHourIdx} setWindHourIdx={setWindHourIdx} />
                   <section className="card">
-                    <h2>Top hunting areas{typeFilter !== 'all' && <span className="muted"> · {({ saddle: 'saddles', bench: 'benches', spur: 'spurs', bottom: 'creek bottoms' } as Record<string, string>)[typeFilter]} only</span>}</h2>
+                    <h2>Top hunting areas{prefs.withKid && <span className="muted"> · kid-friendly</span>}{typeFilter !== 'all' && <span className="muted"> · {({ saddle: 'saddles', bench: 'benches', spur: 'spurs', bottom: 'creek bottoms' } as Record<string, string>)[typeFilter]} only</span>}</h2>
+                    {prefs.withKid && <p className="tiny muted">Walks ≤ 15 min and no steep footing; short, open, close-to-the-truck spots score highest.</p>}
                     <div className="type-chips inline" role="radiogroup" aria-label="Filter by land">
                       {([['all', 'All land'], ['wma', 'WMA'], ['nf', 'National Forest']] as [LandFilter, string][]).map(([t, l]) => (
                         <button key={t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on' : ''} onClick={() => setLandFilter(t)}>{l}</button>
@@ -708,5 +725,5 @@ export default function App() {
 }
 
 const LAYER_LABEL: Record<keyof LayerToggles, string> = {
-  boundaries: 'WMA / National Forest / zone lines', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', disturbance: 'Burns & timber (LANDFIRE)', lidar: 'Lidar hillshade (old roads & trails, zoom in)', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
+  boundaries: 'WMA / National Forest / zone lines', ownership: 'Non-FS (private) parcels', wilderness: 'Sipsey Wilderness', roads: 'FS roads (inventory)', trails: 'NFS trails', streams: 'Derived streams', contours: 'Contours (20 m)', slope: 'Slope shading', disturbance: 'Burns & clear cuts (LANDFIRE)', lidar: 'Lidar hillshade (old roads & trails, zoom in)', candidates: 'Candidate zones (scored)', access: 'Access points', pins: 'My private pins',
 };

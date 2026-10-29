@@ -75,6 +75,8 @@ export function walkMinutes(onNetworkM: number, offTrailM: number, gainM: number
 
 const t = (ms: number) => fmtTime(ms);
 
+const plan_kid = (rec: HuntRecommendation) => rec.candidate.id.length > 0 && rec.components.some((c) => c.key === 'access' && c.positives.some((t) => /kid/i.test(t)));
+
 export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | null, upcoming: Array<{ date: string; session: Session; score: number | null; windFrom: number | null; label: string }> = []): HuntPlan {
   const p = rec.candidate;
   const w = rec.windAssessment;
@@ -140,6 +142,10 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   if (p.type === 'bench' || p.label.startsWith('Side-hill bench')) setup.push('Deer often walk the bench edge; set up just above it on the downwind end.');
   if (p.type === 'bottom' || p.label.startsWith('Creek bottom')) setup.push('Watch crossings and the edge where the slope meets the bottom; cool air pools here at dawn and dusk.');
   setup.push(rec.method === 'bow' || rec.method === 'crossbow' ? 'Keep shots inside 30 yards — clear 2–3 shooting lanes toward the expected travel.' : 'Pick a spot with a clear field of fire and a known backstop.');
+  if (plan_kid(rec)) {
+    setup.push('With a kid: a pop-up ground blind or a big tree to sit against, side by side, with a shooting stick or rest set up before light. Range two or three landmarks (50/75/100 yd) so the shot is a known distance.');
+    setup.push('Keep the kid on your downwind side, bring snacks, hand warmers and a seat — a comfortable kid sits still. Agree on a hand signal for "deer".');
+  }
   steps.push({ key: 'setup', title: 'Setup', lines: setup });
 
   // ---- approach ----
@@ -162,7 +168,8 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   const legal: string[] = [`${rec.legal.summary}`];
   if (rec.legal.bag) legal.push(`Bag: ${rec.legal.bag}.`);
   if (rec.legal.antlerRestriction) legal.push(rec.legal.antlerRestriction);
-  legal.push(`Method: ${weaponLabel(rec.method)}. Check in with the Outdoor Alabama app or a daily permit; report harvest before leaving.`);
+  legal.push(`Method: ${weaponLabel(rec.method)}. ${rec.landJurisdiction.includes('WMA') ? 'Check in with the Outdoor Alabama app or a daily permit; report harvest before leaving.' : 'Report harvest in Game Check before moving the deer.'}`);
+  if (/youth/i.test(rec.legal.huntName ?? '')) legal.push('Youth hunt: the kid must be under 16, within 30 ft of a licensed supervisor (21+ or parent) who is not hunting, and only the kid shoots. Hunter orange for both.');
   for (const r of rec.legal.requirements.filter((x) => /check-station|orange/i.test(x))) legal.push(r);
   steps.push({ key: 'legal', title: 'Legal', lines: legal, tone: rec.legalStatus === 'verified_allowed' ? 'good' : rec.legalStatus === 'requires_verification' ? 'warn' : 'bad' });
 
