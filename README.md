@@ -51,6 +51,7 @@ npm run deploy:rules # publish database.rules.json
 npm run club:create -- --owner-email you@gmail.com --id my-club --file boundary.geojson --name "My Club"   # create a club; the owner invites members in the app
 npm run deploy       # build + deploy the app to standpoint.web.app
 npm run deploy:old-address  # the bankhead.web.app forwarding page (redirect/)
+node scripts/make-icons.mjs && node scripts/make-og.mjs   # regenerate the logo, app icons and link preview
 ```
 
 ## Documentation

@@ -20,6 +20,7 @@ import { OutlookScreen } from '../features/outlook/OutlookScreen';
 import { JournalScreen } from '../features/journal/JournalScreen';
 import { YouScreen } from '../features/you/YouScreen';
 import { Welcome } from '../features/you/Welcome';
+import { LogoMark } from '../ui/Logo';
 import { useClubs } from '../lib/club-data';
 import { useLocal } from '../lib/local';
 
@@ -134,7 +135,7 @@ export function AppShell() {
     return (
       <div className="app desktop">
         <nav className="rail" aria-label="Main">
-          <div className="rail-logo" aria-hidden="true">◭</div>
+          <div className="rail-logo"><LogoMark size={40} title="Stand Point" /></div>
           {NAV.map(({ tab: t, label, icon: Icon }) => <button key={t} type="button" className={`rail-btn ${tab === t ? 'on' : ''}`} aria-current={tab === t ? 'page' : undefined} onClick={() => setTab(t)}><Icon size={22} /><span>{label}</span></button>)}
           <div className="grow" />
           <button type="button" className="rail-btn" onClick={() => setModal('account')} aria-label={signedIn ? 'Account' : 'Sign in'}>{signedIn ? <Avatar user={account.user} size="sm" /> : <LogIn size={22} />}<span>{signedIn ? 'Account' : 'Sign in'}</span></button>

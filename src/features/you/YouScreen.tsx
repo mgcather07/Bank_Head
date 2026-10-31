@@ -6,12 +6,13 @@ import type { JournalEntry, PinDoc } from '../../lib/models';
 import { downloadText, gpxToPins, pinsToGpx } from '../../engine/backup';
 import { localDate } from '../../engine/time';
 import { Avatar, Button, ListRow, Notice, Segmented } from '../../ui/kit';
-import { ArrowLeft, Check, ChevronRight, Download, FileText, Info, LogIn, LogOut, Lock, MapPin, Moon, Shield, Smartphone, TreePine, Upload, Users } from '../../ui/icons';
+import { ArrowLeft, Check, ChevronRight, Download, FileText, LogIn, LogOut, Lock, MapPin, Moon, Shield, Smartphone, TreePine, Upload, Users } from '../../ui/icons';
 import { SavedAreasList, SyncBadge, syncText, GoogleG } from '../explore/Sheets';
 import { SourcesScreen } from './SourcesScreen';
 import { ClubScreen, InboxCard } from './ClubScreen';
 import { useClubs } from '../../lib/club-data';
 import { ROLE_LABEL } from '../../lib/clubs';
+import { LogoMark } from '../../ui/Logo';
 
 export function YouScreen({ ctl, account, sync, theme, setTheme, journal, canInstall, onInstall, onToast }: {
   ctl: HuntController; account: Account; sync: SyncInfo & { loaded: boolean }; theme: 'auto' | 'light' | 'dark'; setTheme: (t: 'auto' | 'light' | 'dark') => void;
@@ -46,11 +47,11 @@ export function YouScreen({ ctl, account, sync, theme, setTheme, journal, canIns
         {u ? (
           <>
             <div className="row" style={{ gap: 14 }}><Avatar user={u} size="lg" /><div className="grow"><h2>{u.name ?? 'Hunter'}</h2><p className="t-sm muted">{u.email}</p></div><SyncBadge sync={sync} /></div>
-            <p className="t-sm dim" style={{ marginTop: 12 }}>{t.label}. Your journal, pins, settings and private land follow you to any device you sign in on.</p>
+            <p className="t-sm dim" style={{ marginTop: 12 }}>{t.label}. Your journal, pins, settings and clubs follow you to any device you sign in on.</p>
           </>
         ) : (
           <div className="stack">
-            <div><h2>Keep your hunts with you</h2><p className="t-sm muted" style={{ marginTop: 4 }}>Sign in to sync your journal and pins across devices and unlock your private land. Everything public works without it.</p></div>
+            <div><h2>Keep your hunts with you</h2><p className="t-sm muted" style={{ marginTop: 4 }}>Sign in to sync your journal and pins across devices and open your hunting club. Everything public works without it.</p></div>
             <Button variant="google" size="lg" block icon={<GoogleG />} onClick={() => void account.signIn()} disabled={account.busy}>{account.busy ? 'Opening Google…' : 'Continue with Google'}</Button>
             {account.error && <Notice tone="bad" title="Sign-in problem" onDismiss={account.clearError}>{account.error}</Notice>}
           </div>
@@ -77,7 +78,7 @@ export function YouScreen({ ctl, account, sync, theme, setTheme, journal, canIns
           <ListRow key={w.id} icon={w.private ? <Lock size={18} /> : <TreePine size={18} />} tone={w.id === ctl.workspace.id ? 'brand' : undefined} title={w.name} sub={w.blurb}
             right={w.id === ctl.workspace.id ? <Check size={20} color="var(--brand)" aria-label="Current" /> : <span className="t-sm muted">Open</span>} onClick={() => openWorkspace(w.id)} />
         ))}
-        {!ctl.lands.length && !clubsApi.clubs.length && <ListRow icon={<Lock size={18} />} title="Your private land" sub={u ? 'No club yet. When someone invites your Google address, it shows up here.' : 'Sign in to see land that belongs to you.'} right={!u ? <Button size="sm" variant="primary" onClick={() => void account.signIn()}>Sign in</Button> : undefined} />}
+        {!ctl.lands.length && !clubsApi.clubs.length && <ListRow icon={<Lock size={18} />} title="Your club" sub={u ? 'No club yet. When someone invites your Google address, it shows up here.' : 'Sign in to see your club.'} right={!u ? <Button size="sm" variant="primary" onClick={() => void account.signIn()}>Sign in</Button> : undefined} />}
       </div>
 
       <div className="section-label">Appearance</div>
@@ -99,7 +100,7 @@ export function YouScreen({ ctl, account, sync, theme, setTheme, journal, canIns
         {canInstall && <ListRow icon={<Smartphone size={18} />} tone="brand" title="Install on this device" sub="Opens full-screen, keeps maps for weak signal" onClick={onInstall} />}
         <ListRow icon={<FileText size={18} />} title="Sources and methods" sub="Data inventory, regulations, known gaps" onClick={() => setPage('sources')} />
         <ListRow icon={<Shield size={18} />} title="Privacy" sub="Your journal and pins are visible only to you. A club is visible only to its members." />
-        <ListRow icon={<Info size={18} />} title="Stand Point" sub="© Rehtac Software LLC · decision support only" />
+        <ListRow icon={<LogoMark size={38} />} title="Stand Point" sub="© Rehtac Software LLC · decision support only" />
       </div>
       {u && <Button block icon={<LogOut size={18} />} onClick={() => void account.signOut()} disabled={account.busy}>Sign out</Button>}
       {!u && <Button block variant="quiet" icon={<LogIn size={18} />} onClick={() => void account.signIn()}>Sign in</Button>}

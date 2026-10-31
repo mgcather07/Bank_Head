@@ -7,18 +7,19 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg', 'icon-192.png'],
+      includeAssets: ['icon.svg', 'icon-192.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Stand Point',
         short_name: 'Stand Point',
         description: 'Terrain, wind, regulation and weather intelligence for Black Warrior WMA, the National Forest and your own hunting land.',
-        theme_color: '#0b100d',
-        background_color: '#0b100d',
+        theme_color: '#08090c',
+        background_color: '#08090c',
         display: 'standalone',
         start_url: '/',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {

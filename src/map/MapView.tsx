@@ -40,7 +40,7 @@ function styleFor(base: BaseMap, dark: boolean): StyleSpecification {
     glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
     sources: { base: { type: 'raster', tiles: [USGS(BASES[base])], tileSize: 256, maxzoom: 16, attribution: 'USGS The National Map' } },
     layers: [
-      { id: 'bg', type: 'background', paint: { 'background-color': dark ? '#0e1410' : '#e9ebe4' } },
+      { id: 'bg', type: 'background', paint: { 'background-color': dark ? '#0b0d11' : '#eceff3' } },
       { id: 'base', type: 'raster', source: 'base', paint: basePaint(base, dark) },
     ],
   };
@@ -149,7 +149,7 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
     const src = map.getSource('base') as maplibregl.RasterTileSource | undefined;
     if (src && 'setTiles' in src) src.setTiles([USGS(BASES[base])]);
     if (map.getLayer('base')) for (const [k, v] of Object.entries(basePaint(base, dark))) map.setPaintProperty('base', k as never, v as never);
-    if (map.getLayer('bg')) map.setPaintProperty('bg', 'background-color', dark ? '#0e1410' : '#e9ebe4');
+    if (map.getLayer('bg')) map.setPaintProperty('bg', 'background-color', dark ? '#0b0d11' : '#eceff3');
   }, [base, dark, mapRef]);
 
   // ---- sources and layers (once data arrives) ----

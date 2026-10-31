@@ -11,12 +11,13 @@ body {
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  font-feature-settings: 'cv11';
+  font-feature-settings: 'cv11', 'ss03';
+  letter-spacing: -0.006em;
 }
 h1, h2, h3, h4, p { margin: 0; }
-h1 { font-size: 22px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
-h2 { font-size: 17px; line-height: 1.25; font-weight: 650; letter-spacing: -0.005em; }
-h3 { font-size: 14px; font-weight: 650; }
+h1 { font-size: 27px; line-height: 1.15; font-weight: 760; letter-spacing: -0.025em; }
+h2 { font-size: 18px; line-height: 1.25; font-weight: 700; letter-spacing: -0.015em; }
+h3 { font-size: 14.5px; font-weight: 680; letter-spacing: -0.01em; }
 a { color: var(--brand-text); text-underline-offset: 2px; }
 button { font: inherit; color: inherit; cursor: pointer; -webkit-appearance: none; appearance: none; }
 button:disabled { cursor: default; }
