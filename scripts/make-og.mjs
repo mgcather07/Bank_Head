@@ -25,11 +25,10 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630">
     <path d="M36 25 L43 37 L37.5 34.5 L32 40 Z" fill="#f3e2b5"/>
   </g>
   <text x="180" y="112" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" letter-spacing="6" fill="#d9a441">REHTAC LABS</text>
-  <text x="180" y="150" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" fill="#9fae9f">bankhead.web.app</text>
-  <text x="72" y="290" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="72" font-weight="800" fill="#ecefe7">Bankhead Hunt</text>
-  <text x="72" y="370" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="72" font-weight="800" fill="#ecefe7">Intelligence</text>
+  <text x="180" y="150" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" fill="#9fae9f">standpoint.web.app</text>
+  <text x="72" y="330" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="96" font-weight="800" fill="#ecefe7">Stand Point</text>
   <text x="72" y="430" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="27" fill="#c9d3c4">Terrain, wind, regulation and weather intelligence</text>
-  <text x="72" y="468" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="27" fill="#c9d3c4">for whitetail deer on Black Warrior WMA, Alabama</text>
+  <text x="72" y="468" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="27" fill="#c9d3c4">for whitetail deer: public land and your hunting club</text>
   <g font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" font-weight="600">
     <rect x="72" y="510" width="196" height="46" rx="23" fill="#26332a" stroke="#3f5245"/><text x="170" y="540" text-anchor="middle" fill="#ecefe7">Morning vs. evening</text>
     <rect x="282" y="510" width="150" height="46" rx="23" fill="#26332a" stroke="#3f5245"/><text x="357" y="540" text-anchor="middle" fill="#ecefe7">Wind &amp; scent</text>

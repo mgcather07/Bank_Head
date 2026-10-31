@@ -57,10 +57,10 @@ export function inviteProblem(club: Club, email: string): string | null {
 
 /** The message sent with an invitation (by the inviter's own share sheet or email app). */
 export function inviteMessage(club: Club, email: string, from: string): { title: string; text: string; url: string } {
-  const url = 'https://bankhead.web.app/#you';
+  const url = 'https://standpoint.web.app/#you';
   return {
     title: `Join ${club.land.name}`,
-    text: `${from} invited you to ${club.land.name} on Bankhead Hunt Intelligence. Open the app and sign in with Google as ${email.trim().toLowerCase()} to accept.`,
+    text: `${from} invited you to ${club.land.name} on Stand Point. Open the app and sign in with Google as ${email.trim().toLowerCase()} to accept.`,
     url,
   };
 }

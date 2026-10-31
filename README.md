@@ -1,8 +1,10 @@
-# Bankhead Hunt Intelligence
+# Stand Point
 
 Mobile-first PWA that ranks scouting/hunting zones for whitetail deer on **Black Warrior WMA**, the surrounding **National Forest**, and **your own private land**, using terrain, habitat, wind/scent, access, time-of-day/rut context, weather and **verified 2026-27 regulations**, and explains every ranking. Sign in with Google and your journal, pins and settings follow you across devices; hunting clubs are shared by invitation and visible only to their members.
 
-Live: **https://bankhead.web.app** (Firebase Hosting, project `rehtac-labs`, site `bankhead`)
+Live: **https://standpoint.web.app** (Firebase Hosting, project `rehtac-labs`, site `standpoint`). The old address, https://bankhead.web.app (site `bankhead`, served from `redirect/`), forwards here and retires the old installed app.
+
+Formerly *Bankhead Hunt Intelligence*; renamed because it now covers private hunting clubs as well as the Bankhead National Forest.
 
 ## Architecture
 
@@ -47,7 +49,8 @@ npm run data:club    # rebuild the public terrain/roads data for the private-lan
 npm run test:rules   # security rules against the database emulator (needs JDK 21+)
 npm run deploy:rules # publish database.rules.json
 npm run club:create -- --owner-email you@gmail.com --id my-club --file boundary.geojson --name "My Club"   # create a club; the owner invites members in the app
-npm run deploy       # build + firebase deploy --only hosting:bankhead --project rehtac-labs
+npm run deploy       # build + deploy the app to standpoint.web.app
+npm run deploy:old-address  # the bankhead.web.app forwarding page (redirect/)
 ```
 
 ## Documentation

@@ -23,7 +23,7 @@ export function YouScreen({ ctl, account, sync, theme, setTheme, journal, canIns
   const openWorkspace = (id: string) => { ctl.switchWorkspace(id); window.location.hash = '/explore'; };
   const t = syncText(sync);
 
-  const exportJson = () => downloadText(`bankhead-backup-${localDate()}.json`, JSON.stringify({ app: 'bankhead-hunt-intelligence', version: 2, exported: new Date().toISOString(), journal, pins: ctl.pins, prefs: ctl.prefs }, null, 1));
+  const exportJson = () => downloadText(`standpoint-backup-${localDate()}.json`, JSON.stringify({ app: 'bankhead-hunt-intelligence', version: 2, exported: new Date().toISOString(), journal, pins: ctl.pins, prefs: ctl.prefs }, null, 1));
   const importGpx = async (f: File) => {
     try {
       const incoming = gpxToPins(await f.text());
@@ -90,7 +90,7 @@ export function YouScreen({ ctl, account, sync, theme, setTheme, journal, canIns
       <div className="section-label">Your data</div>
       <div className="list">
         <ListRow icon={<Download size={18} />} title="Export backup" sub={`${journal.length} journal entries, ${ctl.pins.length} pins (.json)`} onClick={exportJson} />
-        <ListRow icon={<MapPin size={18} />} title="Export pins as GPX" sub="For your GPS or another app" onClick={() => downloadText(`bankhead-pins-${localDate()}.gpx`, pinsToGpx(ctl.pins as PinDoc[]), 'application/gpx+xml')} disabled={!ctl.pins.length} />
+        <ListRow icon={<MapPin size={18} />} title="Export pins as GPX" sub="For your GPS or another app" onClick={() => downloadText(`standpoint-pins-${localDate()}.gpx`, pinsToGpx(ctl.pins as PinDoc[]), 'application/gpx+xml')} disabled={!ctl.pins.length} />
         <label className="list-row file-row"><span className="ico"><Upload size={18} /></span><span className="grow"><div className="title">Import pins from GPX</div><div className="sub">Waypoints from a GPS or hunting app</div></span><input type="file" accept=".gpx,application/gpx+xml" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importGpx(f); e.currentTarget.value = ''; }} /></label>
       </div>
 
@@ -99,7 +99,7 @@ export function YouScreen({ ctl, account, sync, theme, setTheme, journal, canIns
         {canInstall && <ListRow icon={<Smartphone size={18} />} tone="brand" title="Install on this device" sub="Opens full-screen, keeps maps for weak signal" onClick={onInstall} />}
         <ListRow icon={<FileText size={18} />} title="Sources and methods" sub="Data inventory, regulations, known gaps" onClick={() => setPage('sources')} />
         <ListRow icon={<Shield size={18} />} title="Privacy" sub="Your journal and pins are visible only to you. A club is visible only to its members." />
-        <ListRow icon={<Info size={18} />} title="Bankhead Hunt Intelligence" sub="© Rehtac Software LLC · decision support only" />
+        <ListRow icon={<Info size={18} />} title="Stand Point" sub="© Rehtac Software LLC · decision support only" />
       </div>
       {u && <Button block icon={<LogOut size={18} />} onClick={() => void account.signOut()} disabled={account.busy}>Sign out</Button>}
       {!u && <Button block variant="quiet" icon={<LogIn size={18} />} onClick={() => void account.signIn()}>Sign in</Button>}

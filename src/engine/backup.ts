@@ -18,7 +18,7 @@ export function makeBackup(pins: UserPin[], journal: JournalEntry[], prefs: unkn
 
 export function parseBackup(text: string): Backup {
   const j = JSON.parse(text) as Partial<Backup>;
-  if (j.app !== 'bankhead-hunt-intelligence' || !Array.isArray(j.pins) || !Array.isArray(j.journal)) throw new Error('Not a Bankhead Hunt backup file.');
+  if (j.app !== 'bankhead-hunt-intelligence' || !Array.isArray(j.pins) || !Array.isArray(j.journal)) throw new Error('Not a Stand Point backup file.');
   return j as Backup;
 }
 
@@ -32,7 +32,7 @@ const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt
 
 export function pinsToGpx(pins: UserPin[]): string {
   const wpts = pins.map((p) => `  <wpt lat="${p.coord[1]}" lon="${p.coord[0]}"><name>${esc(p.kind.replace('_', ' '))}${p.candidateId ? ` ${esc(p.candidateId)}` : ''}</name><desc>${esc(p.note || '')}</desc><time>${p.created}</time><type>${esc(p.kind)}</type></wpt>`).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Bankhead Hunt Intelligence" xmlns="http://www.topografix.com/GPX/1/1">\n${wpts}\n</gpx>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Stand Point" xmlns="http://www.topografix.com/GPX/1/1">\n${wpts}\n</gpx>`;
 }
 
 /** Minimal GPX waypoint import (lat/lon/name/type). */

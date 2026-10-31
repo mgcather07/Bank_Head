@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'icon-192.png'],
       manifest: {
-        name: 'Bankhead Hunt Intelligence',
-        short_name: 'Bankhead Hunt',
+        name: 'Stand Point',
+        short_name: 'Stand Point',
         description: 'Terrain, wind, regulation and weather intelligence for Black Warrior WMA, the National Forest and your own hunting land.',
         theme_color: '#0b100d',
         background_color: '#0b100d',

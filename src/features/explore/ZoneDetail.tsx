@@ -22,7 +22,7 @@ export function zoneUrl(rec: HuntRecommendation) {
 async function shareZone(rec: HuntRecommendation) {
   const url = zoneUrl(rec);
   const text = `${rec.candidate.label} ${rec.areaId} · ${rec.landJurisdiction} · ${rec.huntDate} ${SESSION_LABEL[rec.session]} · score ${rec.score ?? '—'}`;
-  try { if (navigator.share) await navigator.share({ title: 'Bankhead Hunt Intelligence', text, url }); else { await navigator.clipboard.writeText(url); alert('Link copied.'); } } catch { /* cancelled */ }
+  try { if (navigator.share) await navigator.share({ title: 'Stand Point', text, url }); else { await navigator.clipboard.writeText(url); alert('Link copied.'); } } catch { /* cancelled */ }
 }
 
 function Section({ id, title, open, setOpen, children }: { id: string; title: string; open: string | null; setOpen: (v: string | null) => void; children: ReactNode }) {

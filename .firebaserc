@@ -1,4 +1,17 @@
 {
-  "projects": { "default": "rehtac-labs" },
-  "targets": { "rehtac-labs": { "hosting": { "bankhead": ["bankhead"] } } }
+  "projects": {
+    "default": "rehtac-labs"
+  },
+  "targets": {
+    "rehtac-labs": {
+      "hosting": {
+        "standpoint": [
+          "standpoint"
+        ],
+        "bankhead": [
+          "bankhead"
+        ]
+      }
+    }
+  }
 }

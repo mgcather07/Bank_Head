@@ -58,8 +58,8 @@ The next time that person signs in with that verified Google address, the app co
 - The store has no React or Firebase imports; both are injected, which is how it is unit-tested (`sync.test.ts`).
 
 ## Sign-in notes
-- Provider: Google, via Firebase Authentication on project `rehtac-labs`. `bankhead.web.app` is an authorized domain.
-- Sign-in runs through `bankhead.web.app/__/auth/handler` (same site), not `rehtac-labs.firebaseapp.com`: browsers partition storage across sites, which silently loses a cross-site redirect result. The OAuth client lists that handler as an authorized redirect URI. Phones and the installed app use redirect sign-in; desktops use a popup. The service worker never serves the app shell for `/__/`.
+- Provider: Google, via Firebase Authentication on project `rehtac-labs`. `standpoint.web.app` and `bankhead.web.app` are authorized domains.
+- Sign-in runs through the site's own `/__/auth/handler` (`standpoint.web.app`, or `bankhead.web.app` on the old address), not `rehtac-labs.firebaseapp.com`: browsers partition storage across sites, which silently loses a cross-site redirect result. The OAuth web client lists each site's handler as an authorized redirect URI (Cloud Console → Credentials; there is no API for it), so a new hosting address needs one added there. Phones and the installed app use redirect sign-in; desktops use a popup. The service worker never serves the app shell for `/__/`.
 
 ## Workspaces
 `wma` and `nf` are built in. Each club becomes `club:{id}` and each land in the account `land:{id}` (an old `land:{id}` setting opens `club:{id}` once the land is a club). The active workspace decides the zones, boundary, rules, weather location and map framing, and is saved to the account.

@@ -8,7 +8,7 @@ export function SourcesScreen({ registry }: { registry: SourceRegistry | null })
       <section className="card">
         <h2>Governing regulations</h2>
         <ul className="t-sm" style={{ marginTop: 8 }}>{GOVERNING_LINKS.map((l) => <li key={l.url}><a href={l.url} target="_blank" rel="noreferrer">{l.title}</a></li>)}</ul>
-        <p className="t-xs muted" style={{ marginTop: 8 }}>Bankhead Hunt Intelligence is not affiliated with ADCNR or the USDA Forest Service and does not provide check-in or harvest reporting.</p>
+        <p className="t-xs muted" style={{ marginTop: 8 }}>Stand Point is not affiliated with ADCNR or the USDA Forest Service and does not provide check-in or harvest reporting.</p>
       </section>
       <section className="card">
         <h2>Data inventory</h2>

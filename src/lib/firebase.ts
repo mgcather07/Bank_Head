@@ -4,11 +4,14 @@ import type { FirebaseApp } from 'firebase/app';
 import type { Auth } from 'firebase/auth';
 import type { Database } from 'firebase/database';
 
+/** Hosting sites that serve this app (each is an authorized domain with its own OAuth redirect URI). */
+const SITES = ['standpoint.web.app', 'bankhead.web.app'];
+
 export const firebaseConfig = {
   apiKey: 'AIzaSyC7ksEzwS4Rw57AnCKxVBjEj_ohZysnGFg',
   // Sign-in runs through this site's own /__/auth/handler (served by Firebase Hosting), not rehtac-labs.firebaseapp.com:
   // browsers partition storage across sites, so a cross-site handler silently loses the redirect result (iPhone, Safari, Chrome).
-  authDomain: typeof location !== 'undefined' && location.hostname === 'bankhead.web.app' ? 'bankhead.web.app' : 'rehtac-labs.firebaseapp.com',
+  authDomain: typeof location !== 'undefined' && SITES.includes(location.hostname) ? location.hostname : 'rehtac-labs.firebaseapp.com',
   databaseURL: 'https://bankhead-hunt.firebaseio.com',
   projectId: 'rehtac-labs',
   storageBucket: 'rehtac-labs.firebasestorage.app',
