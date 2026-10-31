@@ -1,7 +1,6 @@
 // Backup / restore of everything private on this device (pins, journal, preferences, saved areas).
 import type { UserPin } from './types';
-import type { JournalEntry } from '../store';
-import type { ClubLand } from './club';
+import type { JournalEntry } from '../lib/models';
 
 export interface Backup {
   app: 'bankhead-hunt-intelligence';
@@ -11,12 +10,10 @@ export interface Backup {
   journal: JournalEntry[];
   prefs?: unknown;
   areas?: unknown;
-  /** The private club boundary (only present if the user has one). Treat the backup file as private. */
-  club?: ClubLand | null;
 }
 
-export function makeBackup(pins: UserPin[], journal: JournalEntry[], prefs: unknown, areas: unknown, club: ClubLand | null = null): Backup {
-  return { app: 'bankhead-hunt-intelligence', version: 1, exported: new Date().toISOString(), pins, journal, prefs, areas, ...(club ? { club } : {}) };
+export function makeBackup(pins: UserPin[], journal: JournalEntry[], prefs: unknown, areas: unknown): Backup {
+  return { app: 'bankhead-hunt-intelligence', version: 1, exported: new Date().toISOString(), pins, journal, prefs, areas };
 }
 
 export function parseBackup(text: string): Backup {

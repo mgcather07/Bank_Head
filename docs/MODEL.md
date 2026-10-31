@@ -101,13 +101,13 @@ A young cut next to an older cut earns a small edge bonus. The wind and setup lo
 - Short (≤ 8 min), gentle walks and open ground or young cuts (room to see and shoot) score higher.
 - The plan adds ground-blind / rest / ranging tips and the youth supervision rule.
 
-## My club (private land)
+## Private land
 
-The club uses the same scoring engine on land the owner imports. Differences:
+Private land uses the same scoring engine on a boundary stored in the person's account. Differences:
 - **Zones come from a lattice, not from rare features.** Gentle ground has few saddles or benches, so the browser scores a lattice of spots (110 m apart) inside the boundary with the same logic as Check this spot (`src/engine/club.ts`), then keeps the best ones at least 210 m apart (up to 24). Spots within 70 m of the boundary (so a zone cannot spill onto a neighbor) or within 50 m of a mapped road are skipped.
 - **TPI is standardized to the club box**, so "upper landscape" and "stands out from its surroundings" mean the best relative features of the local terrain. `scripts/lib/tpi-ref.mjs` can also standardize against Bankhead's spread (`TPI_REF=bankhead`); on this gentle ground that finds almost no saddles or benches.
 - **Jurisdiction is `private_club`.** Inside the boundary the land is the club, under Deer Zone C private-land seasons; outside it, nothing is ranked.
 - **Pressure.** A private club is not given public-land gun-season crowding.
 - **Walk-ins** start from public roads, roads inside the club, and any `parking` pins the owner drops. They are refined on lidar like Bankhead, but only ground inside the boundary (plus mapped roads) may be walked.
 - **Weather and sun** use the club's own location.
-- **Nothing about the club is shared.** Share links are hidden for club zones.
+- **Nothing about the land is shared.** Share links are hidden for private zones.

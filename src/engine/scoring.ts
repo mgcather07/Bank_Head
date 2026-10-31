@@ -255,7 +255,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
     areaId: p.id,
     geometry: c.geometry,
     center: p.center,
-    landJurisdiction: p.jurisdiction && p.jurisdiction !== 'black_warrior_wma' ? (p.jurisdiction === 'nf_outside_wma' ? `Bankhead National Forest · Deer Zone ${p.deerZone ?? 'C/D (near line)'}` : p.jurisdiction === 'private_club' ? CLUB_LABEL : 'Private / non-public land') : `Black Warrior WMA${p.zone ? ` Zone ${p.zone}` : ''}${p.wilderness ? ' · Sipsey Wilderness' : ''}`,
+    landJurisdiction: p.jurisdiction && p.jurisdiction !== 'black_warrior_wma' ? (p.jurisdiction === 'nf_outside_wma' ? `Bankhead National Forest · Deer Zone ${p.deerZone ?? 'C/D (near line)'}` : p.jurisdiction === 'private_club' ? p.landLabel ?? CLUB_LABEL : 'Private / non-public land') : `Black Warrior WMA${p.zone ? ` Zone ${p.zone}` : ''}${p.wilderness ? ' · Sipsey Wilderness' : ''}`,
     zoneId: p.zone ?? undefined,
     huntDate: date,
     session,

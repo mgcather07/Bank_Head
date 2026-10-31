@@ -1,98 +1,21 @@
-// My club — the user's own private hunting land.
+// Private land — zones, walking network and geometry for a boundary that belongs to the signed-in account.
 //
-// Privacy model: the boundary exists only in this browser (localStorage) and in the backup file the user downloads.
-// The site ships public terrain, habitat and road data for a box around the area (public/data/club/), but nothing that
-// says where inside that box the club is. Zones are generated here, in the browser, from that boundary.
+// Privacy model: the boundary lives in the person's own Realtime Database node (readable only by them). The site ships
+// public terrain, habitat and road data for a box around the area (public/data/club/), but nothing that says where
+// inside that box the land is. Zones are generated here, in the browser, from the boundary.
 import type { Feature, FeatureCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon, Position } from 'geojson';
 import type { Candidate, UserPin } from './types';
-import { haversine, polygonContains, type Layers } from './geography';
+import { haversine, polygonContains, type LandMeta, type Layers } from './geography';
 import { roadDistance } from './roads';
 import { analyzeSpot, buildWalkNetwork, cellOf, circle, slopeAt, type TerrainGrid, type WalkNetwork } from './spot';
 import { inClubBox } from './config';
 
 export type ClubGeometry = Polygon | MultiPolygon;
-export interface ClubLand { name: string; geometry: ClubGeometry; saved: string; source?: string }
-export const CLUB_STORAGE_KEY = 'bh.club.v1';
 
 const KX = (lat: number) => 111320 * Math.cos((lat * Math.PI) / 180);
 const KY = 110574;
 
 const polysOf = (g: ClubGeometry): Position[][][] => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates);
-
-// ---------- parsing (GeoJSON, KML, GPX) ----------
-
-function closeRing(r: Position[]): Position[] {
-  const a = r[0], b = r[r.length - 1];
-  return a[0] === b[0] && a[1] === b[1] ? r : [...r, a];
-}
-
-function geometryFromGeoJson(j: unknown, out: Position[][][], names: string[]) {
-  const o = j as { type?: string; features?: unknown[]; geometry?: unknown; geometries?: unknown[]; coordinates?: unknown; properties?: { name?: unknown } | null };
-  if (!o || typeof o !== 'object') return;
-  if (o.type === 'FeatureCollection') { for (const f of o.features ?? []) geometryFromGeoJson(f, out, names); return; }
-  if (o.type === 'Feature') {
-    const before = out.length;
-    geometryFromGeoJson(o.geometry, out, names);
-    if (out.length > before && typeof o.properties?.name === 'string') names.push(o.properties.name);
-    return;
-  }
-  if (o.type === 'GeometryCollection') { for (const g of o.geometries ?? []) geometryFromGeoJson(g, out, names); return; }
-  if (o.type === 'Polygon') out.push(o.coordinates as Position[][]);
-  else if (o.type === 'MultiPolygon') out.push(...(o.coordinates as Position[][][]));
-}
-
-function ringsFromCoordText(text: string): Position[] {
-  return text.trim().split(/\s+/).map((t) => t.split(',').map(Number)).filter((c) => c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1])).map((c) => [c[0], c[1]]);
-}
-
-function geometryFromXml(text: string, out: Position[][][], names: string[]) {
-  const doc = new DOMParser().parseFromString(text, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) throw new Error('That file could not be read as KML or GPX.');
-  // KML: <Polygon><outerBoundaryIs><LinearRing><coordinates>…
-  for (const pm of [...doc.getElementsByTagName('Placemark')]) {
-    const polys = [...pm.getElementsByTagName('Polygon')];
-    const before = out.length;
-    for (const poly of polys) {
-      const outer = poly.getElementsByTagName('outerBoundaryIs')[0]?.getElementsByTagName('coordinates')[0]?.textContent;
-      if (!outer) continue;
-      const rings = [closeRing(ringsFromCoordText(outer))];
-      for (const inner of [...poly.getElementsByTagName('innerBoundaryIs')]) { const t = inner.getElementsByTagName('coordinates')[0]?.textContent; if (t) rings.push(closeRing(ringsFromCoordText(t))); }
-      out.push(rings);
-    }
-    const nm = pm.getElementsByTagName('name')[0]?.textContent;
-    if (out.length > before && nm) names.push(nm.trim());
-  }
-  if (out.length) return;
-  // GPX: a track or route that outlines the property becomes a closed ring
-  for (const seg of [...doc.getElementsByTagName('trkseg'), ...doc.getElementsByTagName('rte')]) {
-    const pts = [...seg.getElementsByTagName(seg.tagName === 'rte' ? 'rtept' : 'trkpt')].map((p) => [Number(p.getAttribute('lon')), Number(p.getAttribute('lat'))]).filter((c) => Number.isFinite(c[0]) && Number.isFinite(c[1]));
-    if (pts.length >= 3) out.push([closeRing(pts)]);
-  }
-  const nm = doc.getElementsByTagName('name')[0]?.textContent;
-  if (out.length && nm) names.push(nm.trim());
-}
-
-/** Read a property boundary from a GeoJSON, KML or GPX file's text. Throws a plain-English error when it can't. */
-export function parseLandFile(text: string, filename = ''): { name: string; geometry: ClubGeometry } {
-  const polys: Position[][][] = [];
-  const names: string[] = [];
-  const t = text.trim();
-  if (!t) throw new Error('The file is empty.');
-  if (t.startsWith('{') || t.startsWith('[')) {
-    try { geometryFromGeoJson(JSON.parse(t), polys, names); } catch (e) { if (e instanceof SyntaxError) throw new Error('That file is not valid GeoJSON.'); throw e; }
-  } else if (t.startsWith('<')) geometryFromXml(t, polys, names);
-  else throw new Error('Use a GeoJSON, KML or GPX file.');
-  if (!polys.length) throw new Error('No property outline (polygon) was found in that file. For GPX, save the boundary as a track or route.');
-  const clean = polys.map((rings) => rings.map(closeRing)).filter((rings) => rings[0].length >= 4);
-  if (!clean.length) throw new Error('The outline in that file has too few points.');
-  for (const rings of clean) for (const [lon, lat] of rings.flat()) if (!(lon >= -180 && lon <= 180 && lat >= -90 && lat <= 90)) throw new Error('Coordinates must be longitude/latitude (WGS84).');
-  const geometry: ClubGeometry = clean.length === 1 ? { type: 'Polygon', coordinates: clean[0] } : { type: 'MultiPolygon', coordinates: clean };
-  const acres = polygonAcres(geometry);
-  if (acres < 2) throw new Error(`That outline is only ${acres.toFixed(1)} acres, which looks wrong.`);
-  if (acres > 20000) throw new Error(`That outline is ${Math.round(acres).toLocaleString()} acres, which is larger than this app handles for a club.`);
-  const fallback = filename.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
-  return { name: (names[0] || fallback || 'My club').slice(0, 60), geometry };
-}
 
 // ---------- geometry ----------
 
@@ -180,7 +103,7 @@ export function buildClubNetwork(roads: Lines, club: ClubGeometry, pins: UserPin
 
 // ---------- zone generation ----------
 
-export interface ClubZoneOptions { spacingM?: number; minEdgeM?: number; roadClearM?: number; separationM?: number; max?: number; maxSlopeDeg?: number }
+export interface ClubZoneOptions { meta?: LandMeta; spacingM?: number; minEdgeM?: number; roadClearM?: number; separationM?: number; max?: number; maxSlopeDeg?: number }
 
 /**
  * Candidate zones for the club: a regular lattice of spots inside the boundary, each scored with the same terrain and
@@ -200,7 +123,7 @@ export function generateClubZones(grid: TerrainGrid, club: ClubGeometry, net: Wa
     const c = cellOf(grid, pt);
     if (!c || slopeAt(grid, c.i) > maxSlope) continue;
     if (roadDistance(pt, roadClear + 1) < roadClear) continue;
-    const r = analyzeSpot(grid, layers, net, pt, { club, asZone: true });
+    const r = analyzeSpot(grid, layers, net, pt, { club, clubMeta: o.meta, asZone: true });
     if ('error' in r) continue;
     found.push(r);
   }

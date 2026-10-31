@@ -1,0 +1,114 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+
+        "schema": { ".validate": "newData.isNumber()" },
+
+        "profile": {
+          ".validate": "newData.hasChildren(['email'])",
+          "name": { ".validate": "newData.isString() && newData.val().length <= 120" },
+          "email": { ".validate": "newData.isString() && newData.val().length <= 200" },
+          "photoURL": { ".validate": "newData.isString() && newData.val().length <= 600" },
+          "created": { ".validate": "newData.isNumber()" },
+          "lastSeen": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+
+        "prefs": {
+          "hunt": { ".validate": "newData.isString() && newData.val().length <= 4000" },
+          "layers": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+          "workspace": { ".validate": "newData.isString() && newData.val().length <= 80" },
+          "base": { ".validate": "newData.isString() && newData.val().length <= 20" },
+          "theme": { ".validate": "newData.isString() && (newData.val() === 'auto' || newData.val() === 'light' || newData.val() === 'dark')" },
+          "typeFilter": { ".validate": "newData.isString() && newData.val().length <= 20" },
+          "onboarded": { ".validate": "newData.isBoolean()" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+
+        "journal": {
+          "$id": {
+            ".validate": "$id.length <= 60 && newData.hasChildren(['date', 'created', 'owner'])",
+            "owner": { ".validate": "newData.val() === $uid" },
+            "date": { ".validate": "newData.isString() && newData.val().length <= 10" },
+            "start": { ".validate": "newData.isString() && newData.val().length <= 8" },
+            "end": { ".validate": "newData.isString() && newData.val().length <= 8" },
+            "location": { ".validate": "newData.isString() && newData.val().length <= 200" },
+            "coord": {
+              "0": { ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180" },
+              "1": { ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90" },
+              "$o": { ".validate": false }
+            },
+            "candidateId": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "method": { ".validate": "newData.isString() && newData.val().length <= 30" },
+            "weather": { ".validate": "newData.isString() && newData.val().length <= 600" },
+            "windObserved": { ".validate": "newData.isString() && newData.val().length <= 100" },
+            "deerSeen": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 999" },
+            "behavior": { ".validate": "newData.isString() && newData.val().length <= 1000" },
+            "harvest": { ".validate": "newData.isString() && (newData.val() === 'none' || newData.val() === 'buck' || newData.val() === 'doe')" },
+            "pressure": { ".validate": "newData.isString() && (newData.val() === 'none' || newData.val() === 'low' || newData.val() === 'moderate' || newData.val() === 'high')" },
+            "sign": { ".validate": "newData.isString() && newData.val().length <= 2000" },
+            "notes": { ".validate": "newData.isString() && newData.val().length <= 8000" },
+            "predictedScore": { ".validate": "newData.isNumber()" },
+            "draft": { ".validate": "newData.isBoolean()" },
+            "created": { ".validate": "newData.isString() && newData.val().length <= 40" },
+            "workspace": { ".validate": "newData.isString() && newData.val().length <= 80" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "pins": {
+          "$id": {
+            ".validate": "$id.length <= 60 && newData.hasChildren(['kind', 'coord', 'created', 'owner'])",
+            "owner": { ".validate": "newData.val() === $uid" },
+            "kind": { ".validate": "newData.isString() && newData.val().matches(/^(stand|sighting|rub|scrape|trail|bedding|feeding|camera|parking|harvest|saved_candidate)$/)" },
+            "coord": {
+              "0": { ".validate": "newData.isNumber() && newData.val() >= -180 && newData.val() <= 180" },
+              "1": { ".validate": "newData.isNumber() && newData.val() >= -90 && newData.val() <= 90" },
+              "$o": { ".validate": false }
+            },
+            "note": { ".validate": "newData.isString() && newData.val().length <= 500" },
+            "created": { ".validate": "newData.isString() && newData.val().length <= 40" },
+            "candidateId": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "workspace": { ".validate": "newData.isString() && newData.val().length <= 80" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "lands": {
+          "$id": {
+            ".validate": "$id.length <= 60 && newData.hasChildren(['name', 'geometryJson', 'pack', 'deerZone'])",
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
+            "kind": { ".validate": "newData.isString() && (newData.val() === 'club' || newData.val() === 'lease' || newData.val() === 'private')" },
+            "pack": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "deerZone": { ".validate": "newData.isString() && (newData.val() === 'C' || newData.val() === 'D')" },
+            "county": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "geometryJson": { ".validate": "newData.isString() && newData.val().length <= 400000" },
+            "acres": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "source": { ".validate": "newData.isString() && newData.val().length <= 120" },
+            "created": { ".validate": "newData.isNumber()" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "$other": { ".validate": false }
+      }
+    },
+
+    "provision": {
+      "$emailKey": {
+        ".read": "auth != null && auth.token.email_verified === true && auth.token.email.toLowerCase().replace('.', ',') === $emailKey",
+        ".write": "auth != null && auth.token.email_verified === true && auth.token.email.toLowerCase().replace('.', ',') === $emailKey && !newData.exists()"
+      }
+    }
+  }
+}

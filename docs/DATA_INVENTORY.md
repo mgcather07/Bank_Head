@@ -42,9 +42,9 @@ Study area: −87.66…−87.08, 33.96…34.50 (`scripts/config.mjs`), covering 
 - **Deer observations, density and harvest data.** None are used, and none are invented.
 - **Prescribed burns and timber management.** FACTS public data for this district is almost all invasive-species work; LANDFIRE FDist is used instead (30 m, age classes only, no exact dates).
 
-## My club (private land)
+## Private land
 
-The club feature is separate from the Bankhead data above. Public files for one small area live in `public/data/club/` (`npm run data:club`):
+Private land is separate from the Bankhead data above. Public files for one small area live in `public/data/club/` (`npm run data:club`):
 
 | Layer | Source | Notes |
 |---|---|---|
@@ -54,6 +54,6 @@ The club feature is separate from the Bankhead data above. Public files for one 
 | Half-resolution terrain grid, streams, contours, slope and disturbance overlays | Derived by `scripts/build-club.mjs` | TPI is standardized against the box's own spread |
 | Deer Zone C private-land seasons | OutdoorAlabama.com 2026-27 deer season page | Transcribed 2026-10-31. Jefferson County is listed under Zone C. The page's zone map image is labelled "Proposed". |
 
-**What is not in the repo or on the site:** the club boundary. It comes from a file the owner imports (GeoJSON, KML or GPX) and is stored only in that browser and in the owner's own backup file. County parcel records may be used once, offline, to make that file. The `private/` folder is git-ignored, and a test checks that the public club data contains no polygons. The public box only shows that a region is covered.
+**What is not in the repo or on the site:** the boundary. It is stored in the owner's own Realtime Database node (readable only by them) and delivered with `scripts/provision-land.mjs`. County parcel records may be used once, offline, to make the boundary file. The `private/` folder is git-ignored, and a test checks that the public data contains no polygons. The public box only shows that a region is covered.
 
-**Known gaps:** no trail, gate or parking data inside the club unless the owner drops `parking` pins; no field-checked boundary (the file is only as exact as its source); no neighbor or harvest data.
+**Known gaps:** no trail, gate or parking data inside the land unless the owner drops `parking` pins; no field-checked boundary (the file is only as exact as its source); no neighbor or harvest data.

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import type { Polygon } from 'geojson';
-import { buildClubNetwork, edgeDistanceM, generateClubZones, hasTerrainData, parseLandFile, polygonAcres, type ClubGeometry } from './club';
+import { buildClubNetwork, edgeDistanceM, generateClubZones, hasTerrainData, polygonAcres, type ClubGeometry } from './club';
 import { parseGrid, type TerrainGrid, type WalkNetwork } from './spot';
 import { buildRoadIndex, setRoadIndex } from './roads';
 import { haversine, lookupClubJurisdiction, type Layers } from './geography';
@@ -25,27 +25,7 @@ function testSquare(m: number, east = 0, north = 0): Polygon {
   return { type: 'Polygon', coordinates: [[[cx - dx, cy - dy], [cx + dx, cy - dy], [cx + dx, cy + dy], [cx - dx, cy + dy], [cx - dx, cy - dy]]] };
 }
 
-describe('club boundary files', () => {
-  it('reads a bare Polygon, a Feature and a FeatureCollection with several tracts', () => {
-    const sq = testSquare(800);
-    expect(parseLandFile(JSON.stringify(sq), 'my_club.geojson')).toMatchObject({ name: 'my club', geometry: { type: 'Polygon' } });
-    const f = { type: 'Feature', properties: { name: 'Lease A' }, geometry: sq };
-    expect(parseLandFile(JSON.stringify(f)).name).toBe('Lease A');
-    const fc = { type: 'FeatureCollection', features: [f, { type: 'Feature', properties: {}, geometry: testSquare(500, 2000) }, { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [-86.7, 33.77] } }] };
-    const r = parseLandFile(JSON.stringify(fc));
-    expect(r.geometry.type).toBe('MultiPolygon');
-    expect((r.geometry as { coordinates: unknown[] }).coordinates).toHaveLength(2);
-  });
-  it('closes an open ring and rejects bad input in plain English', () => {
-    const open = { type: 'Polygon', coordinates: [testSquare(800).coordinates[0].slice(0, 4)] };
-    expect(parseLandFile(JSON.stringify(open)).geometry).toBeTruthy();
-    expect(() => parseLandFile('')).toThrow(/empty/);
-    expect(() => parseLandFile('{nope')).toThrow(/GeoJSON/);
-    expect(() => parseLandFile('hello')).toThrow(/GeoJSON, KML or GPX/);
-    expect(() => parseLandFile(JSON.stringify({ type: 'Point', coordinates: [-86.7, 33.77] }))).toThrow(/No property outline/);
-    expect(() => parseLandFile(JSON.stringify(testSquare(40)))).toThrow(/acres/);
-    expect(() => parseLandFile(JSON.stringify(testSquare(40000)))).toThrow(/larger/);
-  });
+describe('private land geometry', () => {
   it('measures acres and edge distance', () => {
     const sq = testSquare(805); // ≈ 160 acres (805 m = half a mile)
     expect(polygonAcres(sq)).toBeGreaterThan(158);

@@ -50,6 +50,8 @@ export interface CandidateProps {
   type: 'saddle' | 'bench' | 'spur' | 'bottom' | 'spot';
   /** Set on club zones so the app can tell them from checked spots. */
   club?: boolean;
+  /** Full label of the private land this zone is on (e.g. "My Club · private land · Deer Zone C"). */
+  landLabel?: string;
   label: string;
   terrainScore: number;
   center: [number, number];

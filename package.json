@@ -16,16 +16,22 @@
     "deploy": "npm run build && firebase deploy --only hosting:bankhead --project rehtac-labs",
     "og": "node scripts/make-og.mjs",
     "data:routes": "node --max-old-space-size=8192 scripts/build-routes.mjs",
-    "data:club": "node --max-old-space-size=4096 scripts/build-club.mjs"
+    "data:club": "node --max-old-space-size=4096 scripts/build-club.mjs",
+    "test:rules": "firebase emulators:exec --only database --project demo-bankhead \"vitest run -c vitest.rules.config.ts\"",
+    "deploy:rules": "firebase deploy --only database --project rehtac-labs"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "firebase": "^13.1.0",
+    "geotiff": "^3.0.5",
+    "lucide-react": "^1.65.0",
     "maplibre-gl": "^6.15.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "suncalc": "^2.1.1",
-    "geotiff": "^3.0.5"
+    "suncalc": "^2.1.1"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
     "@turf/turf": "^7.4.0",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^24.19.2",

@@ -138,19 +138,21 @@ export function lookupJurisdiction(layers: Layers, pt: [number, number]): Jurisd
   return { kind: 'private_or_unknown', label: inNfAdmin ? 'Private / non-FS inholding' : 'Outside public hunting land', inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: null, distToDividerM: null, deerZone: null, notes };
 }
 
-// ---------- the user's own hunting club (boundary lives only on the user's device) ----------
+// ---------- the user's own private land (boundary comes from their account) ----------
 export const CLUB_LABEL = 'My club · private land · Deer Zone C';
+export interface LandMeta { name?: string; deerZone?: 'C' | 'D' }
 
-/** Jurisdiction for a point inside the user's imported club boundary. */
-export function clubJurisdiction(): Jurisdiction {
+/** Jurisdiction for a point inside one of the person's private lands. */
+export function clubJurisdiction(meta: LandMeta = {}): Jurisdiction {
+  const zone = meta.deerZone ?? 'C';
   return {
-    kind: 'private_club', label: CLUB_LABEL, inWma: false, inNfAdmin: false, fsOwned: false, wilderness: false, zone: null, provisionalZone: null, distToDividerM: null, deerZone: 'C',
-    notes: ['Your club: private land under the statewide private-land deer seasons for Deer Zone C. Your own club rules apply on top of state law.', 'Boundary comes from the file you imported on this device; confirm it against your lease or survey.'],
+    kind: 'private_club', label: `${meta.name ?? 'My club'} · private land · Deer Zone ${zone}`, inWma: false, inNfAdmin: false, fsOwned: false, wilderness: false, zone: null, provisionalZone: null, distToDividerM: null, deerZone: zone,
+    notes: [`Private land under the statewide private-land deer seasons for Deer Zone ${zone}. Your own club rules apply on top of state law.`, 'The boundary comes from your account; confirm it against your lease or survey.'],
   };
 }
 
-/** Inside the club boundary → the club; anywhere else → not huntable by this app (other people's land). */
-export function lookupClubJurisdiction(club: Polygon | MultiPolygon, pt: [number, number]): Jurisdiction {
-  if (polygonContains(club, pt)) return clubJurisdiction();
-  return { kind: 'private_or_unknown', label: 'Outside your club boundary', inWma: false, inNfAdmin: false, fsOwned: null, wilderness: false, zone: null, provisionalZone: null, distToDividerM: null, deerZone: null, notes: ['This point is outside the club boundary you imported. It is someone else\'s land unless you have permission.'] };
+/** Inside the boundary → that land; anywhere else → not huntable by this app (other people's land). */
+export function lookupClubJurisdiction(club: Polygon | MultiPolygon, pt: [number, number], meta: LandMeta = {}): Jurisdiction {
+  if (polygonContains(club, pt)) return clubJurisdiction(meta);
+  return { kind: 'private_or_unknown', label: `Outside ${meta.name ?? 'your club'}`, inWma: false, inNfAdmin: false, fsOwned: null, wilderness: false, zone: null, provisionalZone: null, distToDividerM: null, deerZone: null, notes: ['This point is outside the boundary of this land. It belongs to someone else unless you have permission.'] };
 }

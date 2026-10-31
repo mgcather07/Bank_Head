@@ -3,7 +3,7 @@
 // and routes the walk-in over the FS road / NFS trail network. Results feed the normal scoring engine.
 import type { FeatureCollection, LineString, MultiLineString, Point, Position } from 'geojson';
 import type { Candidate, CandidateProps, RouteOption } from './types';
-import { bearingTo, haversine, lookupClubJurisdiction, lookupJurisdiction, type Layers } from './geography';
+import { bearingTo, haversine, lookupClubJurisdiction, lookupJurisdiction, type LandMeta, type Layers } from './geography';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { roadDistance } from './roads';
 
@@ -257,6 +257,8 @@ let spotSeq = 0;
 export interface SpotOptions {
   /** The user's club boundary: spots inside it are the club (private land); anything else is not huntable. */
   club?: Polygon | MultiPolygon;
+  /** Name and deer zone of that land (labels and legal rules). */
+  clubMeta?: LandMeta;
   /** Generate a club zone (typed by the nearest landform feature, labelled by landform) rather than a one-off checked spot. */
   asZone?: boolean;
 }
@@ -327,7 +329,7 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
   if (habitat.developedAg > 0.4) t -= 0.15;
   const terrainScore = Math.round(Math.max(0, Math.min(1, t)) * 100);
 
-  const j = opts.club ? lookupClubJurisdiction(opts.club, pt) : lookupJurisdiction(layers, pt);
+  const j = opts.club ? lookupClubJurisdiction(opts.club, pt, opts.clubMeta) : lookupJurisdiction(layers, pt);
   const route = net ? routeToSpot(net, g, pt) : null;
   const landform = landformAt(g, c.i);
   const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -339,6 +341,7 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
     id: `SPOT-${++spotSeq}`,
     type: opts.asZone ? f0?.type ?? 'spot' : 'spot',
     club: j.kind === 'private_club' ? true : undefined,
+    landLabel: j.kind === 'private_club' ? j.label : undefined,
     label,
     terrainScore,
     center: [+pt[0].toFixed(6), +pt[1].toFixed(6)],

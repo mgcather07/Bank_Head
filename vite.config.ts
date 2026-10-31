@@ -11,9 +11,9 @@ export default defineConfig({
       manifest: {
         name: 'Bankhead Hunt Intelligence',
         short_name: 'Bankhead Hunt',
-        description: 'Terrain, wind, regulation and weather intelligence for Black Warrior WMA.',
-        theme_color: '#0e1410',
-        background_color: '#121814',
+        description: 'Terrain, wind, regulation and weather intelligence for Black Warrior WMA, the National Forest and your own hunting land.',
+        theme_color: '#0b100d',
+        background_color: '#0b100d',
         display: 'standalone',
         start_url: '/',
         icons: [
@@ -55,5 +55,5 @@ export default defineConfig({
   ],
   worker: { format: 'es' },
   optimizeDeps: { exclude: ['maplibre-gl'] },
-  test: { environment: 'node' },
+  test: { environment: 'node', include: ['src/**/*.test.ts'] },
 } as never)
