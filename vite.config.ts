@@ -25,6 +25,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,json,geojson,gz}'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: '/index.html',
+        // Firebase's sign-in handler must come from the network, never the app shell
+        navigateFallbackDenylist: [/^\/__\//],
         runtimeCaching: [
           {
             // USGS basemap tiles: cache what the hunter has viewed for offline use

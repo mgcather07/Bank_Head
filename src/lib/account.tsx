@@ -88,6 +88,9 @@ export function AccountProvider({ children, beforeSignOut }: { children: ReactNo
       const { GoogleAuthProvider, signInWithPopup, signInWithRedirect } = await import('firebase/auth');
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
+      // A home-screen app or phone can't hand a pop-up's result back reliably; go to Google in this tab instead.
+      const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+      if (standalone || /iPhone|iPad|Android/i.test(navigator.userAgent)) { await signInWithRedirect(auth, provider); return; }
       try {
         await signInWithPopup(auth, provider);
       } catch (e) {

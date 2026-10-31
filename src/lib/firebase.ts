@@ -6,7 +6,9 @@ import type { Database } from 'firebase/database';
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyC7ksEzwS4Rw57AnCKxVBjEj_ohZysnGFg',
-  authDomain: 'rehtac-labs.firebaseapp.com',
+  // Sign-in runs through this site's own /__/auth/handler (served by Firebase Hosting), not rehtac-labs.firebaseapp.com:
+  // browsers partition storage across sites, so a cross-site handler silently loses the redirect result (iPhone, Safari, Chrome).
+  authDomain: typeof location !== 'undefined' && location.hostname === 'bankhead.web.app' ? 'bankhead.web.app' : 'rehtac-labs.firebaseapp.com',
   databaseURL: 'https://bankhead-hunt.firebaseio.com',
   projectId: 'rehtac-labs',
   storageBucket: 'rehtac-labs.firebasestorage.app',
