@@ -27,7 +27,7 @@ export interface SyncInfo { state: SyncState; pending: number; lastSynced: numbe
 export interface Snapshot { user: CloudUser | null; state: UserState; sync: SyncInfo; loaded: boolean }
 export type StoreEvent = { type: 'migrated'; journal: number; pins: number; lands: number } | { type: 'claimed'; lands: string[] };
 
-export const CHILDREN = ['schema', 'profile', 'prefs', 'journal', 'pins', 'lands'] as const;
+export const CHILDREN = ['schema', 'profile', 'prefs', 'journal', 'pins', 'lands', 'clubs'] as const;
 const GUEST_KEY = 'bh.guest.v2';
 const cacheKey = (uid: string) => `bh.cache.v2.${uid}`;
 const outboxKey = (uid: string) => `bh.outbox.v2.${uid}`;
@@ -113,6 +113,8 @@ export class DataStore {
       if (legacy) for (const [k, v] of Object.entries(legacy)) if (v !== undefined) guest[k] = v as unknown as Json;
       this.saveGuest(guest);
     }
+    // private land never lives in the guest store (older versions could put an imported boundary here)
+    if (guest.lands) { delete guest.lands; this.saveGuest(guest); }
     this.base = guest;
     this.ops = [];
     this.snapshot = this.build();
@@ -296,7 +298,8 @@ export class DataStore {
     let guest: UserState = {};
     try { guest = JSON.parse(this.deps.storage.getItem(GUEST_KEY) ?? '{}'); } catch { guest = {}; }
     const have = this.snapshot.state;
-    let journal = 0, pins = 0, lands = 0;
+    let journal = 0, pins = 0;
+    const lands = 0; // land is never merged from a device: it is shared only through clubs
     for (const [id, e] of Object.entries(guest.journal ?? {})) {
       if (have.journal?.[id]) continue;
       this.write(`journal/${id}`, { ...normalizeJournal(id, e), id: undefined, owner: user.uid, updatedAt: this.now() } as unknown as Json);
@@ -306,12 +309,6 @@ export class DataStore {
       if (have.pins?.[id]) continue;
       this.write(`pins/${id}`, { ...normalizePin(id, p), id: undefined, owner: user.uid, updatedAt: this.now() } as unknown as Json);
       pins++;
-    }
-    const haveNames = new Set(Object.values(have.lands ?? {}).map((x) => x.name.trim().toLowerCase()));
-    for (const [id, l] of Object.entries(guest.lands ?? {})) {
-      if (have.lands?.[id] || haveNames.has(l.name.trim().toLowerCase())) continue; // e.g. a boundary imported before accounts, now delivered to the account
-      this.write(`lands/${id}`, l as unknown as Json);
-      lands++;
     }
     if (guest.prefs && !have.prefs) this.write('prefs', { ...(guest.prefs as PrefsDoc), updatedAt: this.now() } as unknown as Json);
     // keep a copy, empty the guest store so nothing is imported twice or shown to the next person on this device

@@ -1,6 +1,6 @@
 # Bankhead Hunt Intelligence
 
-Mobile-first PWA that ranks scouting/hunting zones for whitetail deer on **Black Warrior WMA**, the surrounding **National Forest**, and **your own private land**, using terrain, habitat, wind/scent, access, time-of-day/rut context, weather and **verified 2026-27 regulations**, and explains every ranking. Sign in with Google and your journal, pins, settings and private land follow you across devices.
+Mobile-first PWA that ranks scouting/hunting zones for whitetail deer on **Black Warrior WMA**, the surrounding **National Forest**, and **your own private land**, using terrain, habitat, wind/scent, access, time-of-day/rut context, weather and **verified 2026-27 regulations**, and explains every ranking. Sign in with Google and your journal, pins and settings follow you across devices; hunting clubs are shared by invitation and visible only to their members.
 
 Live: **https://bankhead.web.app** (Firebase Hosting, project `rehtac-labs`, site `bankhead`)
 
@@ -25,7 +25,7 @@ The site is static hosting plus Firebase Authentication (Google sign-in) and the
 | Scoring, legal gates, recommendations | Browser (`src/engine/*`) | Deterministic and versioned |
 | Accounts | Firebase Authentication (Google) | Optional. Everything public works as a guest. |
 | Journal, pins, settings, private land | Realtime Database `users/{uid}` (instance `bankhead-hunt`) | Local-first: changes show instantly, queue offline, sync when there is signal. Rules let only the owner read or write. See [docs/ACCOUNTS.md](docs/ACCOUNTS.md). |
-| Private land | `scripts/build-club.mjs` (public terrain and roads for one small area) + browser (`src/engine/club.ts`) | The boundary is stored in the owner's account, delivered with `scripts/provision-land.mjs`. Zones, scoring and plans are computed in the browser. |
+| Hunting clubs | `scripts/build-club.mjs` (public terrain and roads for one small area) + browser (`src/engine/club.ts`) | The boundary lives at `clubs/{id}`, readable only by invited members (`scripts/create-club.mjs`, invites in the app). Zones, scoring and plans are computed in the browser. |
 
 Engine modules (`src/engine`):
 - `geography.ts`: GeographyService / LandOwnershipService
@@ -46,11 +46,11 @@ npm run data         # re-download sources + rebuild terrain candidates + regist
 npm run data:club    # rebuild the public terrain/roads data for the private-land area
 npm run test:rules   # security rules against the database emulator (needs JDK 21+)
 npm run deploy:rules # publish database.rules.json
-node scripts/provision-land.mjs --email you@gmail.com --file boundary.geojson --name "My Club" --id my-club   # deliver private land to an account
+npm run club:create -- --owner-email you@gmail.com --id my-club --file boundary.geojson --name "My Club"   # create a club; the owner invites members in the app
 npm run deploy       # build + firebase deploy --only hosting:bankhead --project rehtac-labs
 ```
 
 ## Documentation
 - [docs/DATA_INVENTORY.md](docs/DATA_INVENTORY.md): which layers were actually obtained, and the known gaps
-- [docs/ACCOUNTS.md](docs/ACCOUNTS.md): sign-in, data model, security rules, offline sync, delivering private land
+- [docs/ACCOUNTS.md](docs/ACCOUNTS.md): sign-in, data model, security rules, clubs and invitations, offline sync
 - [docs/MODEL.md](docs/MODEL.md): scoring model, gates, confidence and limits

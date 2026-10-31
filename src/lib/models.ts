@@ -75,6 +75,8 @@ export interface UserState {
   journal?: Record<string, JournalEntry>;
   pins?: Record<string, PinDoc>;
   lands?: Record<string, LandWire>;
+  /** Shared clubs this account belongs to (the clubs themselves live under clubs/{id}). */
+  clubs?: Record<string, boolean>;
 }
 
 export const SCHEMA_VERSION = 1;

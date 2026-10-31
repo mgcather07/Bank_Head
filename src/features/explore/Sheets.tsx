@@ -7,7 +7,7 @@ import type { SyncInfo } from '../../lib/sync/store';
 import { addDays, localDate } from '../../engine/time';
 import { ModalSheet } from '../../ui/Sheet';
 import { Avatar, Button, Chip, Field, Notice, Segmented, Spinner, Switch } from '../../ui/kit';
-import { Check, Cloud, CloudOff, Crosshair, Download, LocateFixed, Lock, LogOut, MapPin, Mountain, TreePine, Trash2, User } from '../../ui/icons';
+import { Check, Cloud, CloudOff, Crosshair, Download, LocateFixed, Lock, LogOut, MapPin, Mountain, TreePine, Trash2, User, Users } from '../../ui/icons';
 import { LAYER_GROUPS, PRESETS, presetOf, type Preset } from './layers';
 import { CompassView } from './Compass';
 import { mi } from '../format';
@@ -115,7 +115,7 @@ export function WorkspaceSheet({ open, onClose, workspaces, activeId, onPick, ac
   const publicWs = workspaces.filter((w) => !w.private), privateWs = workspaces.filter((w) => w.private);
   const row = (w: Workspace) => (
     <button type="button" key={w.id} className="list-row" role="radio" aria-checked={w.id === activeId} onClick={() => { onPick(w.id); onClose(); }}>
-      <span className={`ico ${w.id === activeId ? 'brand' : ''}`}>{w.private ? <Lock size={18} /> : <TreePine size={18} />}</span>
+      <span className={`ico ${w.id === activeId ? 'brand' : ''}`}>{w.club ? <Users size={18} /> : w.private ? <Lock size={18} /> : <TreePine size={18} />}</span>
       <span className="grow"><div className="title">{w.name}</div><div className="sub">{w.blurb}</div></span>
       {w.id === activeId && <Check size={20} color="var(--brand)" aria-label="Current" />}
     </button>
@@ -125,11 +125,11 @@ export function WorkspaceSheet({ open, onClose, workspaces, activeId, onPick, ac
       <div style={{ paddingBottom: 8 }}>
         <div className="section-label" style={{ paddingTop: 4 }}>Public land</div>
         <div className="list" role="radiogroup" aria-label="Public land">{publicWs.map(row)}</div>
-        <div className="section-label">Your private land</div>
+        <div className="section-label">Your clubs and private land</div>
         {privateWs.length > 0 ? <div className="list" role="radiogroup" aria-label="Private land">{privateWs.map(row)}</div>
           : account.status === 'signed-in'
-            ? <Notice tone="info" title={landsLoading ? 'Checking your account…' : 'No private land in your account yet'}>Your hunting club appears here as soon as it is added to your login.</Notice>
-            : <div className="card flat stack"><div className="row"><span className="ico-lg"><Lock size={20} /></span><div><h3>Sign in to see your land</h3><p className="t-sm muted">Private land is tied to your login. It never appears on this public site for anyone else.</p></div></div><Button variant="google" block icon={<GoogleG />} onClick={() => void account.signIn()} disabled={account.busy}>Continue with Google</Button>{account.error && <p className="t-sm" style={{ color: 'var(--bad)' }}>{account.error}</p>}</div>}
+            ? <Notice tone="info" title={landsLoading ? 'Checking your account…' : 'No club yet'}>A club appears here once you accept an invitation to it (You tab).</Notice>
+            : <div className="card flat stack"><div className="row"><span className="ico-lg"><Lock size={20} /></span><div><h3>Sign in to see your club</h3><p className="t-sm muted">Clubs are visible only to their invited members. They never appear on this public site for anyone else.</p></div></div><Button variant="google" block icon={<GoogleG />} onClick={() => void account.signIn()} disabled={account.busy}>Continue with Google</Button>{account.error && <p className="t-sm" style={{ color: 'var(--bad)' }}>{account.error}</p>}</div>}
       </div>
     </ModalSheet>
   );

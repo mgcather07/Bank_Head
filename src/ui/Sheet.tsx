@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 // BottomSheet (map screen, three snap points, drag or tap) and ModalSheet (dialogs).
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { IconButton } from './kit';
@@ -107,16 +108,20 @@ export function BottomSheet({ snap, onSnap, peek = 156, header, children, onHeig
 
 export function ModalSheet({ open, title, onClose, children, footer }: { open: boolean; title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  // callers often pass a new onClose every render; focus must move only when the sheet opens, not on each keystroke
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close.current(); };
     window.addEventListener('keydown', onKey);
     ref.current?.querySelector<HTMLElement>('button, [href], input, select, textarea')?.focus({ preventScroll: true });
     return () => { window.removeEventListener('keydown', onKey); prev?.focus?.({ preventScroll: true }); };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
-  return (
+  // rendered at the top of the page so a sheet opened from inside a scrolling screen still covers the tab bar
+  return createPortal(
     <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined} ref={ref}>
         <div className="modal-grab" />
@@ -124,6 +129,7 @@ export function ModalSheet({ open, title, onClose, children, footer }: { open: b
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -147,3 +147,9 @@ button.list-row:hover { background: var(--surface-2); }
 }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes rise { from { transform: translateY(24px); opacity: 0.6; } }
+
+/* clubs */
+.role-tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 650; background: var(--surface-3); color: var(--text-2); white-space: nowrap; }
+.role-tag.owner, .role-tag.admin { background: var(--brand-soft); color: var(--brand-text); }
+.invite-card { border-color: var(--brand); background: linear-gradient(0deg, var(--brand-soft), var(--brand-soft)), var(--surface); }
+.modal-foot > .btn { flex: 1; }

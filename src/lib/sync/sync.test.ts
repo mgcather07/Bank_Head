@@ -249,17 +249,18 @@ describe('first sign-in', () => {
     expect(cloud.provisionDropped).toBe(true);
     expect(events).toContainEqual({ type: 'claimed', lands: ['My Club'] });
   });
-  it('does not duplicate a boundary that was imported on this device before accounts existed', async () => {
+  it('never copies a boundary saved on this device into whoever signs in', async () => {
     const storage = memoryStorage();
     const wire = { name: 'My Club', kind: 'club', pack: 'club', deerZone: 'C', geometryJson: '{}', acres: 0, created: 1 };
-    const g = new DataStore({ storage, openCloud: async () => new FakeCloud(), legacy: () => ({ lands: { imported: wire } as never }) });
-    expect(g.getSnapshot().state.lands?.imported).toBeTruthy();
+    storage.setItem('bh.guest.v2', JSON.stringify({ lands: { imported: wire }, journal: {} }));
+    const g = new DataStore({ storage, openCloud: async () => new FakeCloud() });
+    expect(g.getSnapshot().state.lands).toBeUndefined();
+    expect(JSON.parse(storage.getItem('bh.guest.v2')!).lands).toBeUndefined();
     const cloud = new FakeCloud();
-    cloud.provision = { club1: { ...wire, geometryJson: '{"type":"Polygon","coordinates":[]}', acres: 376 } };
     const { store } = make({ storage, cloud });
     await store.attach(user('u1'));
     await settle();
-    expect(Object.keys(cloud.server.lands as object)).toEqual(['club1']);
+    expect(cloud.server.lands).toBeUndefined();
   });
   it('does not claim for an unverified email', async () => {
     const cloud = new FakeCloud();

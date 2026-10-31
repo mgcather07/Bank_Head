@@ -1,6 +1,7 @@
-// Workspaces — the places a login can hunt: the two public areas, plus every private land in the account.
+// Workspaces — the places a login can hunt: the two public areas, the shared clubs it belongs to, and any private land in the account.
 import type { Candidate, HuntPreferences, LegalEvaluation } from '../engine/types';
 import type { LandDoc } from './models';
+import type { Club } from './clubs';
 import { clubCenter } from '../engine/club';
 import { evaluateLegal } from '../engine/regulations';
 import { BANKHEAD_CENTER } from '../engine/time';
@@ -15,6 +16,8 @@ export interface Workspace {
   blurb: string;
   private: boolean;
   land?: LandDoc;
+  /** Set for a shared club (members, invitations and this account's role). */
+  club?: Club;
 }
 
 export const WMA: Workspace = { id: 'wma', kind: 'wma', name: 'Black Warrior WMA', short: 'WMA', blurb: 'Public · AREA permit · Zones A and B', private: false };
@@ -22,10 +25,19 @@ export const NF: Workspace = { id: 'nf', kind: 'nf', name: 'National Forest', sh
 
 export const landWorkspace = (l: LandDoc): Workspace => ({ id: `land:${l.id}`, kind: 'land', name: l.name, short: l.name.length > 18 ? `${l.name.slice(0, 16)}…` : l.name, blurb: `Private · ${l.acres ? `${Math.round(l.acres)} acres · ` : ''}Deer Zone ${l.deerZone}`, private: true, land: l });
 
-export const workspacesFor = (lands: LandDoc[]): Workspace[] => [WMA, NF, ...lands.map(landWorkspace)];
+export const clubWorkspace = (c: Club): Workspace => {
+  const n = c.members.length;
+  return { ...landWorkspace(c.land), id: `club:${c.id}`, blurb: `Private club · ${Math.round(c.land.acres)} acres · ${n} member${n === 1 ? '' : 's'}`, club: c };
+};
 
-export function resolveWorkspace(id: string | undefined, lands: LandDoc[]): Workspace {
-  return workspacesFor(lands).find((w) => w.id === id) ?? WMA;
+/** Public areas, then clubs, then personal land (a personal copy of a land that is now a shared club is left out). */
+export const workspacesFor = (lands: LandDoc[], clubs: Club[] = []): Workspace[] => [WMA, NF, ...clubs.map(clubWorkspace), ...lands.filter((l) => !clubs.some((c) => c.id === l.id || c.land.name.trim().toLowerCase() === l.name.trim().toLowerCase())).map(landWorkspace)];
+
+export function resolveWorkspace(id: string | undefined, lands: LandDoc[], clubs: Club[] = []): Workspace {
+  const all = workspacesFor(lands, clubs);
+  // land:<id> was the id before the land became a shared club
+  const alias = id?.startsWith('land:') ? `club:${id.slice(5)}` : null;
+  return all.find((w) => w.id === id) ?? all.find((w) => w.id === alias) ?? WMA;
 }
 
 /** Where weather and sunrise are computed for this workspace. */

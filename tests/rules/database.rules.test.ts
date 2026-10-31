@@ -122,3 +122,83 @@ describe('provisioned lands (delivered to a verified email)', () => {
     await assertSucceeds(as('alice', verified('owner@example.com')).ref('provision/owner@example,com').remove());
   });
 });
+
+describe('shared clubs', () => {
+  const key = (e: string) => e.toLowerCase().replace(/\./g, ',');
+  const member = (role: string, extra: Record<string, unknown> = {}) => ({ role, name: 'Someone', email: 'x@gmail.com', joined: 1793000000000, ...extra });
+  const invite = (by: string, role = 'member', email = 'carol.ann@gmail.com') => ({ email, role, invitedBy: by, invitedByName: 'Alice', created: 1793000000000 });
+  const inbox = (role = 'member') => ({ clubName: 'My Club', role, invitedByName: 'Alice', created: 1793000000000 });
+  const seed = async (extraMembers: Record<string, unknown> = {}) => env.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.database().ref('clubs/c1').set({ info: land(), members: { alice: member('owner'), bob: member('member'), ...extraMembers } });
+  });
+  const carol = () => as('carol', verified('carol.ann@gmail.com'));
+  const acceptAsCarol = (role = 'member') => carol().ref().update({
+    'clubs/c1/members/carol': member(role, { email: 'carol.ann@gmail.com' }),
+    [`clubs/c1/invites/${key('carol.ann@gmail.com')}`]: null,
+    [`invites/${key('carol.ann@gmail.com')}/c1`]: null,
+    'users/carol/clubs/c1': true,
+  });
+
+  it('only members can read a club; nobody can list clubs', async () => {
+    await seed();
+    await assertSucceeds(as('alice').ref('clubs/c1').get());
+    await assertSucceeds(as('bob').ref('clubs/c1/info').get());
+    await assertFails(as('carol').ref('clubs/c1').get());
+    await assertFails(as('carol').ref('clubs/c1/info').get());
+    await assertFails(as('alice').ref('clubs').get());
+    await assertFails(anon().ref('clubs/c1').get());
+  });
+  it('nobody can create a club or make themselves a member from the app', async () => {
+    await assertFails(as('mallory').ref('clubs/c2/info').set(land()));
+    await assertFails(as('mallory').ref('clubs/c2/members/mallory').set(member('owner')));
+    await seed();
+    await assertFails(as('mallory', verified('mallory@gmail.com')).ref('clubs/c1/members/mallory').set(member('member')));
+  });
+  it('the owner invites; plain members cannot', async () => {
+    await seed();
+    await assertSucceeds(as('alice').ref().update({ [`clubs/c1/invites/${key('carol.ann@gmail.com')}`]: invite('alice'), [`invites/${key('carol.ann@gmail.com')}/c1`]: inbox() }));
+    await assertFails(as('bob').ref(`clubs/c1/invites/${key('dave@gmail.com')}`).set(invite('bob', 'member', 'dave@gmail.com')));
+    await assertFails(as('bob').ref(`invites/${key('dave@gmail.com')}/c1`).set(inbox()));
+    await assertFails(as('alice').ref(`clubs/c1/invites/${key('dave@gmail.com')}`).set(invite('bob', 'member', 'dave@gmail.com'))); // must sign as yourself
+    await assertFails(as('alice').ref(`clubs/c1/invites/${key('dave@gmail.com')}`).set(invite('alice', 'owner', 'dave@gmail.com')));
+  });
+  it('admins invite members but not admins', async () => {
+    await seed({ dan: member('admin') });
+    await assertSucceeds(as('dan').ref(`clubs/c1/invites/${key('carol.ann@gmail.com')}`).set(invite('dan')));
+    await assertFails(as('dan').ref(`clubs/c1/invites/${key('erin@gmail.com')}`).set(invite('dan', 'admin', 'erin@gmail.com')));
+  });
+  it('the invited, verified email accepts with exactly the invited role, then can read the club', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async (ctx) => { await ctx.database().ref().update({ [`clubs/c1/invites/${key('carol.ann@gmail.com')}`]: invite('alice'), [`invites/${key('carol.ann@gmail.com')}/c1`]: inbox() }); });
+    await assertSucceeds(carol().ref(`invites/${key('carol.ann@gmail.com')}`).get());
+    await assertFails(as('bob', verified('bob@gmail.com')).ref(`invites/${key('carol.ann@gmail.com')}`).get());
+    await assertFails(as('carol', { email: 'carol.ann@gmail.com', email_verified: false }).ref('clubs/c1/members/carol').set(member('member')));
+    await assertFails(carol().ref('clubs/c1/members/carol').set(member('admin')));
+    await assertSucceeds(acceptAsCarol());
+    await assertSucceeds(carol().ref('clubs/c1/info').get());
+    await assertFails(carol().ref('clubs/c1/members/carol').set(member('admin'))); // cannot promote yourself
+  });
+  it('an invitation is single-use and can be declined', async () => {
+    await seed();
+    await env.withSecurityRulesDisabled(async (ctx) => { await ctx.database().ref().update({ [`clubs/c1/invites/${key('carol.ann@gmail.com')}`]: invite('alice'), [`invites/${key('carol.ann@gmail.com')}/c1`]: inbox() }); });
+    await assertSucceeds(carol().ref().update({ [`clubs/c1/invites/${key('carol.ann@gmail.com')}`]: null, [`invites/${key('carol.ann@gmail.com')}/c1`]: null }));
+    await assertFails(carol().ref('clubs/c1/members/carol').set(member('member')));
+  });
+  it('the owner removes members; members leave; the owner cannot be removed', async () => {
+    await seed({ dan: member('admin') });
+    await assertFails(as('bob').ref('clubs/c1/members/dan').remove());
+    await assertFails(as('dan').ref('clubs/c1/members/alice').remove());
+    await assertFails(as('alice').ref('clubs/c1/members/alice').remove());
+    await assertFails(as('dan').ref('clubs/c1/members/bob').set(member('admin')));
+    await assertSucceeds(as('alice').ref('clubs/c1/members/bob').set(member('admin')));
+    await assertSucceeds(as('dan').ref('clubs/c1/members/dan').remove());
+    await assertSucceeds(as('alice').ref('clubs/c1/members/bob').remove());
+    await assertFails(as('bob').ref('clubs/c1').get());
+  });
+  it('only the owner edits the boundary', async () => {
+    await seed({ dan: member('admin') });
+    await assertSucceeds(as('alice').ref('clubs/c1/info/name').set('Renamed'));
+    await assertFails(as('dan').ref('clubs/c1/info/name').set('Hijack'));
+    await assertFails(as('bob').ref('clubs/c1/info/geometryJson').set('{}'));
+  });
+});

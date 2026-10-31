@@ -20,6 +20,7 @@ import { haversine, lookupClubJurisdiction, lookupJurisdiction } from '../engine
 import { peakTimeline } from '../engine/peak';
 import { evaluateLegal } from '../engine/regulations';
 import { usePins, useLands, usePref } from '../lib/data';
+import { useClubs } from '../lib/club-data';
 import { useLocal } from '../lib/local';
 import { uid } from '../lib/id';
 import { filterCandidates, legalProbes, resolveWorkspace, workspaceCenter, workspacesFor, youthWindow, type Workspace } from '../lib/workspaces';
@@ -34,6 +35,7 @@ export type Insets = { top: number; bottom: number; left: number; right: number 
 
 export function useHuntController() {
   const lands = useLands();
+  const { clubs, loaded: clubsLoaded } = useClubs();
   const { pins, add: addPin, remove: removePin } = usePins();
   const [huntStored, setHunt] = usePref<HuntPreferences>('hunt', DEFAULT_PREFS, { json: true });
   const prefs = useMemo(() => (huntStored.date < localDate() ? { ...huntStored, date: localDate() } : huntStored), [huntStored]);
@@ -50,12 +52,12 @@ export function useHuntController() {
   const [clubData, setClubData] = useState<ClubData | null>(null);
   const [clubError, setClubError] = useState<string | null>(null);
   useEffect(() => { loadData().then((d) => { setRoadIndex(buildRoadIndex(d.fsRoads, d.highways, d.osmRoads)); setPathIndex(buildRoadIndex(d.fsRoads, d.highways, d.osmRoads, d.trails)); setBaseData(d); }).catch((e) => setLoadError(String(e))); }, []);
-  const needsClub = lands.some((l) => l.pack === 'club');
+  const needsClub = lands.some((l) => l.pack === 'club') || clubs.some((c) => c.land.pack === 'club');
   useEffect(() => { if (needsClub && !clubData) loadClubData().then(setClubData).catch((e) => setClubError(`Could not load the terrain data for your land: ${e}`)); }, [needsClub, clubData]);
 
   // ---- workspace ----
-  const workspaces = useMemo(() => workspacesFor(lands), [lands]);
-  const workspace: Workspace = useMemo(() => resolveWorkspace(workspaceId, lands), [workspaceId, lands]);
+  const workspaces = useMemo(() => workspacesFor(lands, clubs), [lands, clubs]);
+  const workspace: Workspace = useMemo(() => resolveWorkspace(workspaceId, lands, clubs), [workspaceId, lands, clubs]);
   const land = workspace.land ?? null;
   const landReady = !land || !!clubData;
 
@@ -286,12 +288,16 @@ export function useHuntController() {
   const switchWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);
     setSelectedKey(null); setInspect(null); setSpots([]); setTypeFilter('all');
-    const ws = resolveWorkspace(id, lands);
+    const ws = resolveWorkspace(id, lands, clubs);
     setTimeout(() => fitWorkspace(ws), 60);
-  }, [lands, setWorkspaceId, fitWorkspace, setTypeFilter]);
+  }, [lands, clubs, setWorkspaceId, fitWorkspace, setTypeFilter]);
 
-  // if the active land disappears (removed on another device), fall back to the WMA
-  useEffect(() => { if (workspaceId.startsWith('land:') && !lands.some((l) => `land:${l.id}` === workspaceId)) setWorkspaceId('wma'); }, [lands, workspaceId, setWorkspaceId]);
+  // if the active land or club goes away (removed, or you left the club), fall back to the WMA; an old land:<id> becomes club:<id>
+  useEffect(() => {
+    if (!clubsLoaded || !(workspaceId.startsWith('land:') || workspaceId.startsWith('club:'))) return;
+    const ws = resolveWorkspace(workspaceId, lands, clubs);
+    if (ws.id !== workspaceId) setWorkspaceId(ws.id);
+  }, [lands, clubs, clubsLoaded, workspaceId, setWorkspaceId]);
 
   // ---- actions ----
   const openRec = useCallback((r: HuntRecommendation) => { setSelectedKey({ id: r.areaId, session: r.session, date: r.huntDate }); setInspect(null); setWindHourIdx(0); setTimeout(() => fitZone(r), 40); }, [fitZone]);
@@ -413,7 +419,7 @@ export function useHuntController() {
 
   return {
     // data
-    data, baseData, loadError, clubError, landReady, clubRoads: clubData?.roads ?? null, workspace, workspaces, switchWorkspace, land, lands,
+    data, baseData, loadError, clubError, landReady, clubRoads: clubData?.roads ?? null, workspace, workspaces, switchWorkspace, land, lands, clubs,
     // preferences
     prefs, setPrefs, base, setBase, layers, setLayers, typeFilter, setTypeFilter,
     // hunt

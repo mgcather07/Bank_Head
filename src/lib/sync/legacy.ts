@@ -1,8 +1,6 @@
 // Data kept by earlier versions of the app, one localStorage key per feature. Read once, when a device first
 // becomes a guest of the new store, so nothing a hunter already logged is lost.
-import type { Json, JournalEntry, LandWire, PinDoc, UserState } from '../models';
-import { landToWire } from '../models';
-import type { LandDoc } from '../models';
+import type { Json, JournalEntry, PinDoc, UserState } from '../models';
 
 function read<T>(key: string): T | null {
   try { const raw = localStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : null; } catch { return null; }
@@ -18,11 +16,7 @@ export function legacyState(): Partial<UserState> {
   const hunt = localStorage.getItem('bh.prefs.v1'); if (hunt) prefs.hunt = hunt;
   const base = read<string>('bh.base.v1'); if (base) prefs.base = base;
   if (Object.keys(prefs).length) out.prefs = prefs as UserState['prefs'];
-  // a boundary imported with the previous version
-  const club = read<{ name: string; geometry: LandDoc['geometry']; saved?: string }>('bh.club.v1');
-  if (club?.geometry) {
-    const land: LandWire = landToWire({ id: 'imported', name: club.name || 'My club', kind: 'club', pack: 'club', deerZone: 'C', geometry: club.geometry, acres: 0, created: Date.now() } as LandDoc);
-    out.lands = { imported: land };
-  }
+  // a boundary imported with an older version (bh.club.v1) is deliberately not carried over: land is shared only
+  // through a club, never copied into whichever account signs in on this device
   return out;
 }

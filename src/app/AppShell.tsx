@@ -20,6 +20,7 @@ import { OutlookScreen } from '../features/outlook/OutlookScreen';
 import { JournalScreen } from '../features/journal/JournalScreen';
 import { YouScreen } from '../features/you/YouScreen';
 import { Welcome } from '../features/you/Welcome';
+import { useClubs } from '../lib/club-data';
 import { useLocal } from '../lib/local';
 
 type Modal = null | 'workspace' | 'account' | 'filters' | 'layers' | 'compass';
@@ -31,6 +32,7 @@ export function AppShell() {
   const sync = useSyncInfo();
   const store = useStore();
   const toast = useToast();
+  const clubsApi = useClubs();
   const journal = useJournal();
   const [theme, setTheme] = usePref<'auto' | 'light' | 'dark'>('theme', 'auto');
   const dark = useTheme(theme);
@@ -61,11 +63,23 @@ export function AppShell() {
   }), [store, toast]);
   // a land that just arrived becomes the active workspace once, so the first thing you see after signing in is yours
   const seenLands = useRef<string[] | null>(null);
+  const privateIds = useMemo(() => ctl.workspaces.filter((w) => w.private).map((w) => w.id), [ctl.workspaces]);
   useEffect(() => {
-    const ids = ctl.lands.map((l) => l.id);
-    if (seenLands.current && ids.some((id) => !seenLands.current!.includes(id))) { const added = ctl.lands.find((l) => !seenLands.current!.includes(l.id)); if (added) setTimeout(() => ctl.switchWorkspace(`land:${added.id}`), 500); }
-    if (ids.length || signedIn) seenLands.current = ids;
-  }, [ctl.lands, signedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!clubsApi.loaded) return;
+    const seen = seenLands.current;
+    const added = seen ? privateIds.find((id) => !seen.includes(id)) : undefined;
+    if (added) setTimeout(() => ctl.switchWorkspace(added), 500);
+    if (privateIds.length || signedIn) seenLands.current = privateIds;
+  }, [privateIds, signedIn, clubsApi.loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a new club invitation: say so once, wherever the person is in the app
+  const toldInvites = useRef(new Set<string>());
+  useEffect(() => {
+    for (const inv of clubsApi.inbox) {
+      if (toldInvites.current.has(inv.clubId)) continue;
+      toldInvites.current.add(inv.clubId);
+      toast.show(`${inv.invitedByName} invited you to ${inv.clubName}.`, { action: { label: 'View', run: () => { window.location.hash = '/you'; } }, ms: 9000 });
+    }
+  }, [clubsApi.inbox, toast]);
 
   // first visit: invite a guest to sign in, once
   const showWelcome = account.confirmed && !signedIn && !welcomed && !account.busy;
