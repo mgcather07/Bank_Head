@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // prompt: the app shows "Update available · Refresh" (src/app/UpdatePrompt.tsx) instead of swapping code silently
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['icon.svg', 'icon-192.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'Stand Point',
