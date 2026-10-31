@@ -13,7 +13,7 @@ import { BottomSheet, ModalSheet, type Snap } from '../ui/Sheet';
 import { Avatar, Button } from '../ui/kit';
 import { useToast } from '../ui/toast';
 import { BookOpen, Calendar, ChevronDown, Lock, MapIcon, TreePine, User, LogIn } from '../ui/icons';
-import { ExploreBody, ExploreHeader } from '../features/explore/ExplorePanel';
+import { ExploreBody, ExploreHeader, ExploreMini } from '../features/explore/ExplorePanel';
 import { MapChrome } from '../features/explore/MapChrome';
 import { AccountSheet, CompassSheet, FilterSheet, LayersSheet, WorkspaceSheet } from '../features/explore/Sheets';
 import { OutlookScreen } from '../features/outlook/OutlookScreen';
@@ -50,7 +50,16 @@ export function AppShell() {
   useEffect(() => { if (tab === 'explore' || desktop) setTimeout(() => ctl.mapRef.current?.resize(), 60); }, [tab, desktop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // opening a zone or tapping the map lifts the sheet so the answer is visible
-  useEffect(() => { if ((ctl.selected || ctl.inspect) && snap === 'peek') setSnap('half'); }, [ctl.selected?.areaId, ctl.inspect]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if ((ctl.selected || ctl.inspect) && (snap === 'peek' || snap === 'mini')) setSnap('half'); }, [ctl.selected?.areaId, ctl.inspect]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // panning the map tucks the sheet away so you can see the ground; tap the bar to bring it back
+  useEffect(() => {
+    const map = ctl.mapRef.current;
+    if (!map || desktop) return;
+    const tuck = (e: { originalEvent?: Event }) => { if (e.originalEvent) setSnap((s) => (s === 'peek' || s === 'half' ? 'mini' : s)); };
+    map.on('dragstart', tuck);
+    return () => { map.off('dragstart', tuck); };
+  }, [ctl.mapRef.current, desktop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // leave room around the sheet when the map flies somewhere
   const { setInsets } = ctl;
@@ -160,7 +169,7 @@ export function AppShell() {
       <div className="explore" hidden={tab !== 'explore'}>
         {mapNode}
         {chrome('mobile')}
-        <BottomSheet snap={snap} onSnap={setSnap} onHeight={onSheetHeight} label="Hunting areas and conditions" header={<ExploreHeader ctl={ctl} onFilters={() => setModal('filters')} />}>
+        <BottomSheet snap={snap} onSnap={setSnap} onHeight={onSheetHeight} label="Hunting areas and conditions" header={<ExploreHeader ctl={ctl} onFilters={() => setModal('filters')} />} mini={<ExploreMini ctl={ctl} />}>
           <ExploreBody ctl={ctl} onJournal={startJournal} onFilters={() => setModal('filters')} />
         </BottomSheet>
       </div>

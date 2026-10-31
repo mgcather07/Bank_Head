@@ -1,11 +1,13 @@
 import { createPortal } from 'react-dom';
-// BottomSheet (map screen, three snap points, drag or tap) and ModalSheet (dialogs).
+// BottomSheet (map screen: a minimized bar plus three snap points, drag or tap) and ModalSheet (dialogs).
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { IconButton } from './kit';
 import { X } from './icons';
 
-export type Snap = 'peek' | 'half' | 'full';
-const ORDER: Snap[] = ['peek', 'half', 'full'];
+export type Snap = 'mini' | 'peek' | 'half' | 'full';
+const ORDER: Snap[] = ['mini', 'peek', 'half', 'full'];
+/** The minimized sheet: the grab handle and one line, so the map gets nearly the whole screen. */
+export const MINI_HEIGHT = 64;
 
 /** Height of the element a node lives in (the sheet is sized against the screen area it sits on). */
 function useParentHeight(ref: RefObject<HTMLElement | null>) {
@@ -25,11 +27,13 @@ export function snapHeights(container: number, peek: number) {
   const top = 64 + (parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-t')) || 0);
   const full = Math.max(peek + 120, container - top);
   const half = Math.min(full - 60, Math.max(peek + 140, Math.round(container * 0.5)));
-  return { peek, half, full } as Record<Snap, number>;
+  return { mini: MINI_HEIGHT, peek, half, full } as Record<Snap, number>;
 }
 
-export function BottomSheet({ snap, onSnap, peek = 156, header, children, onHeight, label }: {
+export function BottomSheet({ snap, onSnap, peek = 156, header, mini, children, onHeight, label }: {
   snap: Snap;
+  /** One line shown when minimized; tapping it brings the sheet back. */
+  mini?: ReactNode;
   onSnap: (s: Snap) => void;
   peek?: number;
   header: ReactNode;
@@ -44,16 +48,18 @@ export function BottomSheet({ snap, onSnap, peek = 156, header, children, onHeig
   const body = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y0: number; h0: number; on: boolean; t0: number; lastY: number; lastT: number; v: number } | null>(null);
   const target = container ? heights[snap] : peek;
+  const hasMini = !!mini;
 
   useEffect(() => { if (container) onHeight?.(target); }, [target, container, onHeight]);
 
   const settle = useCallback((h: number, v: number) => {
     const projected = h - v * 160; // v is px/ms downward positive
     let best: Snap = 'peek', bd = Infinity;
-    for (const s of ORDER) { const d = Math.abs(heights[s] - projected); if (d < bd) { bd = d; best = s; } }
+    for (const s of ORDER) {
+      if (s === 'mini' && !hasMini) continue; const d = Math.abs(heights[s] - projected); if (d < bd) { bd = d; best = s; } }
     if (el.current) { el.current.style.transition = ''; el.current.style.height = `${heights[best]}px`; }
     onSnap(best);
-  }, [heights.peek, heights.half, heights.full, onSnap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [heights.peek, heights.half, heights.full, onSnap, hasMini]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const root = el.current;
@@ -77,7 +83,7 @@ export function BottomSheet({ snap, onSnap, peek = 156, header, children, onHeig
         root.style.transition = 'none';
       }
       e.preventDefault();
-      const h = Math.min(heights.full, Math.max(heights.peek - 24, d.h0 - (t.clientY - d.y0)));
+      const h = Math.min(heights.full, Math.max((hasMini ? heights.mini : heights.peek) - 24, d.h0 - (t.clientY - d.y0)));
       root.style.height = `${h}px`;
       const dt = e.timeStamp - d.lastT;
       if (dt > 0) d.v = (t.clientY - d.lastY) / dt;
@@ -93,15 +99,21 @@ export function BottomSheet({ snap, onSnap, peek = 156, header, children, onHeig
     root.addEventListener('touchend', end);
     root.addEventListener('touchcancel', end);
     return () => { root.removeEventListener('touchstart', start); root.removeEventListener('touchmove', move); root.removeEventListener('touchend', end); root.removeEventListener('touchcancel', end); };
-  }, [snap, heights.full, heights.peek, settle]);
+  }, [snap, heights.full, heights.peek, heights.mini, settle, hasMini]);
 
-  const cycle = () => onSnap(snap === 'peek' ? 'half' : snap === 'half' ? 'full' : 'peek');
+  const cycle = () => onSnap(snap === 'mini' || snap === 'full' ? 'peek' : snap === 'peek' ? 'half' : 'full');
 
   return (
     <section ref={el} className="sheet" data-snap={snap} style={{ height: target }} aria-label={label}>
-      <button type="button" className="sheet-grab" onClick={cycle} aria-label={snap === 'full' ? 'Collapse panel' : 'Expand panel'}><i /></button>
-      <div className="sheet-head">{header}</div>
-      <div ref={body} className="sheet-body" style={{ overflowY: snap === 'full' ? 'auto' : 'hidden' }}>{children}</div>
+      <button type="button" className="sheet-grab" onClick={cycle} aria-label={snap === 'full' ? 'Collapse panel' : snap === 'mini' ? 'Show panel' : 'Expand panel'}><i /></button>
+      {snap === 'mini' && mini ? (
+        <button type="button" className="sheet-mini" onClick={() => onSnap('peek')} aria-label="Show panel">{mini}</button>
+      ) : (
+        <>
+          <div className="sheet-head">{header}</div>
+          <div ref={body} className="sheet-body" style={{ overflowY: snap === 'full' ? 'auto' : 'hidden' }}>{children}</div>
+        </>
+      )}
     </section>
   );
 }

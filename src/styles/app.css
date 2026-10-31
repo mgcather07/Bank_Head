@@ -65,6 +65,9 @@
 .sheet-grab { flex: none; display: grid; place-items: center; height: 26px; width: 100%; border: 0; background: none; padding: 0; }
 .sheet-grab i { width: 42px; height: 5px; border-radius: 3px; background: var(--line-strong); }
 .sheet-head { flex: none; padding: 0 16px 12px; }
+.sheet-mini { flex: none; display: block; width: 100%; padding: 0 16px 10px; border: 0; background: none; text-align: left; color: inherit; }
+.mini-row { display: flex; align-items: center; gap: 10px; font-size: 15px; white-space: nowrap; }
+.mini-row .grow { overflow: hidden; text-overflow: ellipsis; }
 .sheet-body { flex: 1; min-height: 0; padding: 4px 16px 28px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; border-top: 1px solid var(--line); }
 .explore-head .summary { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 .day-control { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

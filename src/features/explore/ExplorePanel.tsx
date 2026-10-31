@@ -1,8 +1,9 @@
 import type { HuntController } from '../../app/useHuntController';
 import type { HuntRecommendation } from '../../engine/types';
 import { Empty, Notice, ScoreBadge, Button } from '../../ui/kit';
-import { Target } from '../../ui/icons';
+import { ChevronUp, Target } from '../../ui/icons';
 import { legalLightLeft, SESSION_LABEL } from '../format';
+import { fmtDate, localDate } from '../../engine/time';
 import { weaponLabel } from '../../engine/regulations';
 import { mi } from '../format';
 import { ConditionsCard } from './ConditionsCard';
@@ -30,6 +31,24 @@ export function ExploreHeader({ ctl, onFilters }: { ctl: HuntController; onFilte
         </div>
       )}
     </div>
+  );
+}
+
+/** The minimized sheet: one line with the day and how it looks, tap to bring the panel back. */
+export function ExploreMini({ ctl }: { ctl: HuntController }) {
+  const { ratings, selected, prefs } = ctl;
+  const m = ratings.morning, e = ratings.evening;
+  const best = (m?.score ?? -1) >= (e?.score ?? -1) ? m : e;
+  const day = prefs.date === localDate() ? 'Today' : fmtDate(prefs.date, { weekday: 'short', month: 'numeric', day: 'numeric' });
+  const score = selected ? selected.score : best?.score ?? null;
+  const legal = selected ? selected.legalStatus : best?.legalStatus;
+  const line = selected ? selected.candidate.label : best ? `${best === m ? 'Morning' : 'Evening'} favored` : 'No legal zones';
+  return (
+    <span className="mini-row">
+      <ScoreBadge small score={score} legal={legal} />
+      <span className="grow"><b>{line}</b><span className="muted"> · {day}</span></span>
+      <ChevronUp size={20} className="muted" />
+    </span>
   );
 }
 
