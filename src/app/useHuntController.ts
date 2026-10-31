@@ -5,7 +5,7 @@ import type { Map as MLMap } from 'maplibre-gl';
 import { loadClubData, loadData, type AppData, type ClubData } from '../data';
 import type { BaseMap, LayerToggles, SetupMarker, ZoneMark, ZoneTypeFilter } from '../map/MapView';
 import type { SavedArea } from '../engine/offline';
-import { cachedTileCount, downloadArea, removeArea, tilesFor } from '../engine/offline';
+import { cachedTileCount, downloadArea, removeArea, tilesForBase } from '../engine/offline';
 import { getPastDay } from '../engine/climate';
 import { analyzeSpot, buildWalkNetwork, loadGrid, type WalkNetwork } from '../engine/spot';
 import { buildClubNetwork, clubBounds, generateClubZones, hasTerrainData } from '../engine/club';
@@ -398,9 +398,9 @@ export function useHuntController() {
     if (!m) return 'The map is not ready.';
     const b = m.getBounds();
     const bbox: [number, number, number, number] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    const n = tilesFor(bbox).length;
+    const n = tilesForBase(bbox, base).length;
     if (n > 2500) return `That view needs ${n} tiles (limit 2,500). Zoom in a little and try again.`;
-    if (!confirm(`Download ${n} ${base} tiles (~${Math.round((n * 18) / 1000)} MB) for offline use?`)) return null;
+    if (!confirm(`Download ${n} ${base} tiles (~${Math.round((n * (base === 'lidar' ? 30 : 18)) / 1000)} MB) for offline use?`)) return null;
     setDlProgress({ done: 0, total: n, failed: 0 });
     try {
       const r = await downloadArea(bbox, base, (done, total, failed) => setDlProgress({ done, total, failed }));

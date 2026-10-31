@@ -11,7 +11,7 @@ import { Check, Cloud, CloudOff, Crosshair, Download, LocateFixed, Lock, LogOut,
 import { LAYER_GROUPS, PRESETS, presetOf, type Preset } from './layers';
 import { CompassView } from './Compass';
 import { mi } from '../format';
-import type { SavedArea } from '../../engine/offline';
+import { lat2y, lon2x, tileUrl, type SavedArea } from '../../engine/offline';
 
 // ---------------- filters ----------------
 export function filterCount(prefs: HuntPreferences, typeFilter: ZoneTypeFilter) {
@@ -56,7 +56,23 @@ export function FilterSheet({ open, onClose, prefs, setPrefs, typeFilter, setTyp
 }
 
 // ---------------- layers ----------------
-const BASE_LABEL: Record<BaseMap, string> = { topo: 'Topo', satellite: 'Satellite', hybrid: 'Hybrid', hillshade: 'Relief' };
+const BASE_LABEL: Record<BaseMap, string> = { topo: 'Topo', satellite: 'Satellite', hybrid: 'Hybrid', hillshade: 'Relief', lidar: 'Lidar' };
+// a sample tile with some relief and a road, so each base map shows what it looks like
+const THUMB: [number, number, number] = [14, lon2x(-87.37, 14), lat2y(34.262, 14)];
+const thumbUrl = (b: BaseMap) => tileUrl(b, ...THUMB);
+
+function BaseMapPicker({ value, onChange }: { value: BaseMap; onChange: (b: BaseMap) => void }) {
+  return (
+    <div className="base-grid" role="radiogroup" aria-label="Base map">
+      {(Object.keys(BASE_LABEL) as BaseMap[]).map((b) => (
+        <button key={b} type="button" role="radio" aria-checked={value === b} className="base-opt" onClick={() => onChange(b)}>
+          <span className="thumb"><img src={thumbUrl(b)} alt="" loading="lazy" decoding="async" />{b === 'lidar' && <i className="hd">HD</i>}</span>
+          <span className="lbl">{BASE_LABEL[b]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 export function LayersSheet({ open, onClose, base, setBase, layers, setLayers, onCompass, onSaveOffline, dlProgress, online }: {
   open: boolean; onClose: () => void; base: BaseMap; setBase: (b: BaseMap) => void; layers: LayerToggles; setLayers: (l: LayerToggles) => void; onCompass: () => void; onSaveOffline: () => void; dlProgress: { done: number; total: number } | null; online: boolean;
 }) {
@@ -64,7 +80,7 @@ export function LayersSheet({ open, onClose, base, setBase, layers, setLayers, o
   return (
     <ModalSheet open={open} onClose={onClose} title="Map" footer={<Button variant="primary" block onClick={onClose}>Done</Button>}>
       <div className="stack" style={{ paddingBottom: 8 }}>
-        <Field label="Base map"><Segmented label="Base map" block value={base} onChange={setBase} options={(Object.keys(BASE_LABEL) as BaseMap[]).map((b) => [b, BASE_LABEL[b]])} /></Field>
+        <Field label="Base map" hint={base === 'lidar' ? 'USGS 3DEP lidar, about 1 m detail: benches, old roadbeds, drainages and cuts show clearly. Zoom in for the full resolution.' : undefined}><BaseMapPicker value={base} onChange={setBase} /></Field>
         <Field label="Detail">
           <div className="presets">
             {(Object.keys(PRESETS) as Preset[]).map((k) => (

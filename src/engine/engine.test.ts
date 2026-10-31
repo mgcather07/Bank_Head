@@ -662,3 +662,16 @@ describe('clear-cut ages', () => {
     }
   });
 });
+
+describe('lidar tiles', () => {
+  it('builds the same 3DEP URL for a tile every time, in the shape the offline cache rule matches', async () => {
+    const { lidarTileUrl } = await import('./lidarTiles');
+    const u = lidarTileUrl(16, 16971, 26290);
+    expect(u).toBe(lidarTileUrl(16, 16971, 26290));
+    expect(u).toMatch(/^https:\/\/elevation\.nationalmap\.gov\/arcgis\/rest\/services\/3DEPElevation\/ImageServer\/exportImage\?bbox=.*f=image$/);
+    expect(u).toContain('size=512,512');
+    const [w, s, e, n] = u.match(/bbox=([^&]+)/)![1].split(',').map(Number);
+    expect(e - w).toBeCloseTo(611.5, 0);
+    expect(n - s).toBeCloseTo(611.5, 0);
+  });
+});

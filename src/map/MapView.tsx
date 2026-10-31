@@ -13,11 +13,13 @@ import { BANKHEAD_CENTER } from '../engine/time';
 import { CLUB_BBOX, STUDY_BBOX } from '../engine/config';
 import { pathDistance } from '../engine/roads';
 import type { WorkspaceKind } from '../lib/workspaces';
+import { LIDAR_MAX_Z, registerLidarProtocol } from './lidarTiles';
 
 // MapLibre v6 ships its worker as a separate ES module; bundle it so the static build can load it.
 maplibregl.setWorkerUrl(workerUrl);
+registerLidarProtocol();
 
-export type BaseMap = 'topo' | 'satellite' | 'hybrid' | 'hillshade';
+export type BaseMap = 'topo' | 'satellite' | 'hybrid' | 'hillshade' | 'lidar';
 export interface LayerToggles {
   boundaries: boolean; ownership: boolean; wilderness: boolean; roads: boolean; trails: boolean; streams: boolean; contours: boolean;
   slope: boolean; disturbance: boolean; lidar: boolean; candidates: boolean; access: boolean; pins: boolean;
@@ -28,7 +30,8 @@ export interface SetupMarker { id: string; coord: [number, number]; primary: boo
 export interface ZoneMark { score: number | null; rank: number | null; tier: 1 | 2 | 3 }
 
 const USGS = (svc: string) => `https://basemap.nationalmap.gov/arcgis/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`;
-const BASES: Record<BaseMap, string> = { topo: 'USGSTopo', satellite: 'USGSImageryOnly', hybrid: 'USGSImageryTopo', hillshade: 'USGSShadedReliefOnly' };
+// lidar draws over the USGS shaded relief, which fills in while its own tiles load
+const BASES: Record<BaseMap, string> = { topo: 'USGSTopo', satellite: 'USGSImageryOnly', hybrid: 'USGSImageryTopo', hillshade: 'USGSShadedReliefOnly', lidar: 'USGSShadedReliefOnly' };
 type Quad = [[number, number], [number, number], [number, number], [number, number]];
 const quad = (b: readonly number[]): Quad => [[b[0], b[3]], [b[2], b[3]], [b[2], b[1]], [b[0], b[1]]];
 const PIN_COLORS: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', saved_candidate: '#f7f2a1' };
@@ -38,12 +41,20 @@ function styleFor(base: BaseMap, dark: boolean): StyleSpecification {
   return {
     version: 8,
     glyphs: 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf',
-    sources: { base: { type: 'raster', tiles: [USGS(BASES[base])], tileSize: 256, maxzoom: 16, attribution: 'USGS The National Map' } },
+    sources: {
+      base: { type: 'raster', tiles: [USGS(BASES[base])], tileSize: 256, maxzoom: 16, attribution: 'USGS The National Map' },
+      lidar: { type: 'raster', tiles: ['lidar://{z}/{x}/{y}'], tileSize: 256, maxzoom: LIDAR_MAX_Z, attribution: 'USGS 3DEP lidar' },
+    },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': dark ? '#0b0d11' : '#eceff3' } },
       { id: 'base', type: 'raster', source: 'base', paint: basePaint(base, dark) },
+      { id: 'lidar-base', type: 'raster', source: 'lidar', paint: lidarPaint(dark), layout: { visibility: base === 'lidar' ? 'visible' : 'none' } },
     ],
   };
+}
+// Lidar relief as the base map: a touch more contrast so benches and old roadbeds read, dimmed at night.
+function lidarPaint(dark: boolean) {
+  return { 'raster-contrast': dark ? 0.18 : 0.12, 'raster-brightness-max': dark ? 0.78 : 1, 'raster-brightness-min': dark ? 0.06 : 0, 'raster-fade-duration': 150 };
 }
 // A quieter basemap: topo is desaturated a little, and dimmed in dark mode so the zones stand out.
 function basePaint(base: BaseMap, dark: boolean) {
@@ -111,6 +122,8 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
   const cbs = useRef({ onCandidate, onInspect });
   cbs.current = { onCandidate, onInspect };
   const initial = useRef({ base, dark });
+  const baseRef = useRef(base);
+  baseRef.current = base;
 
   // ---- init ----
   useEffect(() => {
@@ -149,7 +162,14 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
     const src = map.getSource('base') as maplibregl.RasterTileSource | undefined;
     if (src && 'setTiles' in src) src.setTiles([USGS(BASES[base])]);
     if (map.getLayer('base')) for (const [k, v] of Object.entries(basePaint(base, dark))) map.setPaintProperty('base', k as never, v as never);
+    if (map.getLayer('lidar-base')) {
+      map.setLayoutProperty('lidar-base', 'visibility', base === 'lidar' ? 'visible' : 'none');
+      for (const [k, v] of Object.entries(lidarPaint(dark))) map.setPaintProperty('lidar-base', k as never, v as never);
+    }
+    // the lidar overlay would just double the lidar base map
+    if (map.getLayer('lidar-hs')) map.setLayoutProperty('lidar-hs', 'visibility', base !== 'lidar' && layers.lidar ? 'visible' : 'none');
     if (map.getLayer('bg')) map.setPaintProperty('bg', 'background-color', dark ? '#0b0d11' : '#eceff3');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, dark, mapRef]);
 
   // ---- sources and layers (once data arrives) ----
@@ -163,8 +183,7 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
       // raster overlays first, so everything else draws above them
       map.addSource('slope', { type: 'image', url: `${import.meta.env.BASE_URL}data/slope.png`, coordinates: quad([STUDY_BBOX[0], STUDY_BBOX[1], STUDY_BBOX[2], STUDY_BBOX[3]]) });
       map.addLayer({ id: 'slope', type: 'raster', source: 'slope', paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
-      map.addSource('lidar-hs', { type: 'raster', tileSize: 256, minzoom: 11, maxzoom: 17, attribution: 'USGS 3DEP lidar', tiles: ['https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&renderingRule=%7B%22rasterFunction%22%3A%22Hillshade%20Multidirectional%22%7D&f=image'] });
-      map.addLayer({ id: 'lidar-hs', type: 'raster', source: 'lidar-hs', minzoom: 12, paint: { 'raster-opacity': 0.55 }, layout: { visibility: 'none' } });
+      map.addLayer({ id: 'lidar-hs', type: 'raster', source: 'lidar', minzoom: 12, paint: { 'raster-opacity': 0.55 }, layout: { visibility: 'none' } });
       map.addSource('disturbance', { type: 'image', url: `${import.meta.env.BASE_URL}data/disturbance.png`, coordinates: quad([STUDY_BBOX[0], STUDY_BBOX[1], STUDY_BBOX[2], STUDY_BBOX[3]]) });
       map.addLayer({ id: 'disturbance', type: 'raster', source: 'disturbance', paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
       map.addSource('fuel', { type: 'geojson', data: data.fuelTreatments });
@@ -257,7 +276,7 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
       vis(['contours', 'contour-labels'], layers.contours);
       vis(['slope', 'slope-club'], layers.slope);
       vis(['disturbance', 'disturbance-club', 'fuel-line'], layers.disturbance);
-      vis(['lidar-hs'], layers.lidar);
+      vis(['lidar-hs'], layers.lidar && baseRef.current !== 'lidar');
       vis(['cand-fill', 'cand-line', 'cand-dot-1', 'cand-dot-2', 'cand-dot-3', 'cand-rank', 'setups', 'setup-label'], layers.candidates);
       vis(['access', 'access-label'], layers.access);
       vis(['pins'], layers.pins);

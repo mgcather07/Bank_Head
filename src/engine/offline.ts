@@ -1,6 +1,9 @@
-// Offline area packs: pre-fetch USGS basemap tiles for a bounding box into the same cache the service worker
-// serves from ('usgs-tiles'), so the map keeps working with no signal. USGS tiles are public domain.
+// Offline area packs: pre-fetch USGS basemap tiles (or lidar relief tiles) for a bounding box into the same cache
+// the service worker serves from, so the map keeps working with no signal. USGS data is public domain.
+import { lidarTileUrl } from './lidarTiles';
+
 export const TILE_CACHE = 'usgs-tiles';
+export const LIDAR_CACHE = 'lidar-hillshade';
 export const MIN_Z = 11;
 export const MAX_Z = 15;
 export const MAX_TILES = 2500;
@@ -16,7 +19,10 @@ export interface SavedArea {
 }
 
 const svcFor = (base: string) => ({ topo: 'USGSTopo', satellite: 'USGSImageryOnly', hybrid: 'USGSImageryTopo', hillshade: 'USGSShadedReliefOnly' }[base] ?? 'USGSTopo');
-export const tileUrl = (base: string, z: number, x: number, y: number) => `https://basemap.nationalmap.gov/arcgis/rest/services/${svcFor(base)}/MapServer/tile/${z}/${y}/${x}`;
+export const tileUrl = (base: string, z: number, x: number, y: number) => (base === 'lidar' ? lidarTileUrl(z, x, y) : `https://basemap.nationalmap.gov/arcgis/rest/services/${svcFor(base)}/MapServer/tile/${z}/${y}/${x}`);
+const cacheFor = (base: string) => (base === 'lidar' ? LIDAR_CACHE : TILE_CACHE);
+/** Lidar is saved one zoom deeper: its detail is the point of choosing it. */
+export const tilesForBase = (bbox: [number, number, number, number], base: string) => tilesFor(bbox, MIN_Z, base === 'lidar' ? MAX_Z + 1 : MAX_Z);
 
 export function lon2x(lon: number, z: number) { return Math.floor(((lon + 180) / 360) * 2 ** z); }
 export function lat2y(lat: number, z: number) { const r = (lat * Math.PI) / 180; return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * 2 ** z); }
@@ -31,9 +37,9 @@ export function tilesFor(bbox: [number, number, number, number], zMin = MIN_Z, z
 }
 
 export async function downloadArea(bbox: [number, number, number, number], base: string, onProgress: (done: number, total: number, failed: number) => void, signal?: AbortSignal): Promise<{ done: number; failed: number; bytes: number }> {
-  const tiles = tilesFor(bbox);
+  const tiles = tilesForBase(bbox, base);
   if (tiles.length > MAX_TILES) throw new Error(`Area too large (${tiles.length} tiles; limit ${MAX_TILES}). Zoom in and try again.`);
-  const cache = await caches.open(TILE_CACHE);
+  const cache = await caches.open(cacheFor(base));
   let done = 0, failed = 0, bytes = 0;
   const queue = [...tiles];
   const worker = async () => {
@@ -62,14 +68,15 @@ export async function downloadArea(bbox: [number, number, number, number], base:
 
 export async function cachedTileCount(): Promise<number> {
   try {
-    const c = await caches.open(TILE_CACHE);
-    return (await c.keys()).length;
+    let n = 0;
+    for (const name of [TILE_CACHE, LIDAR_CACHE]) n += (await (await caches.open(name)).keys()).length;
+    return n;
   } catch {
     return 0;
   }
 }
 
 export async function removeArea(area: SavedArea) {
-  const c = await caches.open(TILE_CACHE);
-  for (const [z, x, y] of tilesFor(area.bbox)) await c.delete(tileUrl(area.base, z, x, y));
+  const c = await caches.open(cacheFor(area.base));
+  for (const [z, x, y] of tilesForBase(area.bbox, area.base)) await c.delete(tileUrl(area.base, z, x, y));
 }
