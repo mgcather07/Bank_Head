@@ -15,7 +15,8 @@
     "data": "npm run data:fetch && npm run data:terrain && npm run data:routes && npm run data:registry",
     "deploy": "npm run build && firebase deploy --only hosting:bankhead --project rehtac-labs",
     "og": "node scripts/make-og.mjs",
-    "data:routes": "node --max-old-space-size=8192 scripts/build-routes.mjs"
+    "data:routes": "node --max-old-space-size=8192 scripts/build-routes.mjs",
+    "data:club": "node --max-old-space-size=4096 scripts/build-club.mjs"
   },
   "dependencies": {
     "maplibre-gl": "^6.15.0",

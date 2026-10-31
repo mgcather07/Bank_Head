@@ -24,6 +24,7 @@ The site is entirely static. It has no Cloud Functions and no backend.
 | Severe alerts | Browser → NWS `api.weather.gov/alerts` | |
 | Scoring, legal gates, recommendations | Browser (`src/engine/*`) | Deterministic and versioned |
 | Pins and journal | Browser localStorage | Private to the device. Nothing is uploaded. |
+| My club (private land) | `scripts/build-club.mjs` (public terrain and roads for one small area) + browser (`src/engine/club.ts`) | The boundary is imported by the owner and stored only on the device and in their backup file. Zones, scoring and plans are computed in the browser. |
 
 Engine modules (`src/engine`):
 - `geography.ts`: GeographyService / LandOwnershipService
@@ -39,8 +40,9 @@ Engine modules (`src/engine`):
 ```bash
 npm install
 npm run dev          # local dev server
-npm test             # 81 engine tests (LIDAR_TEST=1 also runs a live USGS lidar routing check) (jurisdiction, regulations, wind, time/DST, data failures, scoring)
+npm test             # 102 engine tests (LIDAR_TEST=1 also runs a live USGS lidar routing check) (jurisdiction, regulations, wind, time/DST, data failures, scoring)
 npm run data         # re-download sources + rebuild terrain candidates + registry
+npm run data:club    # rebuild the public terrain/roads data for the private-club area
 npm run deploy       # build + firebase deploy --only hosting:bankhead --project rehtac-labs
 ```
 

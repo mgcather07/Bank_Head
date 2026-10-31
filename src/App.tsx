@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MLMap } from 'maplibre-gl';
-import { loadData, type AppData } from './data';
+import { loadClubData, loadData, type AppData, type ClubData } from './data';
 import { MapView, type BaseMap, type LandFilter, type LayerToggles, type SetupMarker, type ZoneTypeFilter } from './components/MapView';
-import { BackupPanel, HuntForm, InspectCard, JournalPanel, OfflinePanel, Outlook, PeekBar, RecCard, RecDetail, ScorePill, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
+import { BackupPanel, ClubPanel, HuntForm, InspectCard, JournalPanel, OfflinePanel, Outlook, PeekBar, RecCard, RecDetail, ScorePill, SettingsBar, SourcesPanel, TodayCard, type OutlookDay } from './components/Panels';
 import { CompassView } from './components/Compass';
 import { cachedTileCount, downloadArea, removeArea, tilesFor, type SavedArea } from './engine/offline';
 import { downloadText, gpxToPins, makeBackup, mergeById, parseBackup, pinsToGpx } from './engine/backup';
 import { getNormals, getPastDay, type Normals } from './engine/climate';
 import { analyzeSpot, buildWalkNetwork, loadGrid, type WalkNetwork } from './engine/spot';
+import { buildClubNetwork, clubBounds, clubCenter, CLUB_STORAGE_KEY, generateClubZones, hasTerrainData, parseLandFile, polygonAcres, type ClubLand } from './engine/club';
 import { buildHuntPlan, setupPoint } from './engine/plan';
 import { buildRoadIndex, setPathIndex, setRoadIndex } from './engine/roads';
 import { lidarRoute } from './engine/lidar';
@@ -17,7 +18,7 @@ import type { HuntPreferences, HuntRecommendation, Session, WeatherAlert, Weathe
 import { addDays, BANKHEAD_CENTER, fmtDate, fmtTime, localDate, sessionWindows, sunDay } from './engine/time';
 import { getAlerts, getWeather, hoursBetween } from './engine/weather';
 import { evaluateCandidate, rankCandidates, sessionsFor } from './engine/scoring';
-import { haversine, lookupJurisdiction } from './engine/geography';
+import { haversine, lookupClubJurisdiction, lookupJurisdiction } from './engine/geography';
 import { peakTimeline } from './engine/peak';
 import { evaluateLegal } from './engine/regulations';
 import { useJournal, usePersisted, usePins, uid, type JournalEntry } from './store';
@@ -26,13 +27,18 @@ type Tab = 'map' | 'hunt' | 'outlook' | 'journal' | 'sources';
 const PAGE_TITLE: Record<Tab, string> = { map: 'Map', hunt: 'Hunt', outlook: '7-Day Outlook', journal: 'Journal & Pins', sources: 'Info & Sources' };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type InstallPrompt = any;
-import { inStudyArea } from './engine/config';
+import { inClubBox, inStudyArea } from './engine/config';
 
 const DEFAULT_PREFS: HuntPreferences = { date: localDate(), session: 'compare', weapon: 'bow', target: 'any', maxWalkMeters: 3200, stand: 'climber', effort: 'balanced', youthHunter: false, start: null };
 const DEFAULT_LAYERS: LayerToggles = { boundaries: true, ownership: true, wilderness: true, roads: true, trails: true, streams: true, contours: true, slope: false, disturbance: false, lidar: false, candidates: true, access: true, pins: true };
 
 export default function App() {
-  const [data, setData] = useState<AppData | null>(null);
+  const [baseData, setData] = useState<AppData | null>(null);
+  // My club: the boundary lives only in this browser (and the user's own backup file)
+  const [club, setClub] = usePersisted<ClubLand | null>(CLUB_STORAGE_KEY, null);
+  const [areaPref, setAreaPref] = usePersisted<'bankhead' | 'club'>('bh.area.v1', 'bankhead');
+  const [clubData, setClubData] = useState<ClubData | null>(null);
+  const [clubError, setClubError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [storedPrefs, setPrefs] = usePersisted<HuntPreferences>('bh.prefs.v1', DEFAULT_PREFS);
   // never carry a past date forward from storage
@@ -89,6 +95,30 @@ export default function App() {
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [journalDraft, setJournalDraft] = useState<Partial<JournalEntry> | null>(null);
   const { pins, add: addPin, remove: removePin, setAll: setPins } = usePins();
+  useEffect(() => {
+    if (!club) { setClubData(null); return; }
+    loadClubData().then((d) => { setClubData(d); setClubError(null); }).catch((e) => setClubError(`Could not load the club terrain data: ${e}`));
+  }, [!!club]); // eslint-disable-line react-hooks/exhaustive-deps
+  const clubMode = areaPref === 'club' && !!club && !!clubData;
+  const parkingPins = useMemo(() => pins.filter((p) => p.kind === 'parking'), [pins]);
+  const clubNet = useMemo(() => (club && clubData ? buildClubNetwork(clubData.roads, club.geometry, parkingPins) : null), [club, clubData, parkingPins]);
+  const clubZones = useMemo(() => {
+    if (!club || !clubData || !baseData) return [];
+    // the road indexes know the club's roads too, so zones and setups keep off them
+    setRoadIndex(buildRoadIndex(baseData.fsRoads, baseData.highways, baseData.osmRoads, clubData.roads));
+    setPathIndex(buildRoadIndex(baseData.fsRoads, baseData.highways, baseData.osmRoads, baseData.trails, clubData.roads));
+    return generateClubZones(clubData.grid, club.geometry, clubNet, baseData);
+  }, [club, clubData, baseData, clubNet]);
+  // What the rest of the app sees: Bankhead as loaded, or the club's zones while "My club" is shown.
+  const data = useMemo<AppData | null>(() => {
+    if (!baseData) return null;
+    if (!clubData) return baseData;
+    const contours = { ...baseData.contours, features: [...baseData.contours.features, ...clubData.contours.features] };
+    const streams = { ...baseData.streams, features: [...baseData.streams.features, ...clubData.streams.features] };
+    if (!clubMode) return { ...baseData, contours, streams };
+    const feats = clubZones.map((c, i) => ({ type: 'Feature' as const, id: i + 1, geometry: c.geometry, properties: c.properties }));
+    return { ...baseData, contours, streams, candidates: clubZones, candidatesFc: { type: 'FeatureCollection', features: feats }, accessPoints: { type: 'FeatureCollection', features: [] } };
+  }, [baseData, clubData, clubMode, clubZones]);
   const [normals, setNormals] = useState<Normals | null>(null);
   const [areas, setAreas] = usePersisted<SavedArea[]>('bh.areas.v1', []);
   const [dlProgress, setDlProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
@@ -133,7 +163,7 @@ export default function App() {
     return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  const wxPoint: [number, number] = inStudyArea(prefs.start) ? prefs.start! : BANKHEAD_CENTER;
+  const wxPoint: [number, number] = clubMode && club ? clubCenter(club.geometry) : inStudyArea(prefs.start) ? prefs.start! : BANKHEAD_CENTER;
   const wxKey = `${wxPoint[0].toFixed(2)},${wxPoint[1].toFixed(2)}`;
   const refreshWeather = useCallback(async (force = false) => {
     setRefreshing(true);
@@ -162,9 +192,9 @@ export default function App() {
   const recs = useMemo(() => {
     if (!ranked) return [];
     const seen = new Set<string>();
-    return wanted.flatMap((s) => ranked.bySession[s]).filter((r) => (typeFilter === 'all' || r.candidate.type === typeFilter) && (landFilter === 'all' || (landFilter === 'nf') === (r.candidate.jurisdiction === 'nf_outside_wma'))).sort((a, b) => (a.legalStatus === b.legalStatus ? (b.score ?? -1) - (a.score ?? -1) : a.legalStatus === 'verified_allowed' ? -1 : 1)).filter((r) => (seen.has(r.areaId) ? false : (seen.add(r.areaId), true))).slice(0, 5);
+    return wanted.flatMap((s) => ranked.bySession[s]).filter((r) => (typeFilter === 'all' || r.candidate.type === typeFilter) && (clubMode || landFilter === 'all' || (landFilter === 'nf') === (r.candidate.jurisdiction === 'nf_outside_wma'))).sort((a, b) => (a.legalStatus === b.legalStatus ? (b.score ?? -1) - (a.score ?? -1) : a.legalStatus === 'verified_allowed' ? -1 : 1)).filter((r) => (seen.has(r.areaId) ? false : (seen.add(r.areaId), true))).slice(0, 5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ranked, prefs.session, typeFilter, landFilter]);
+  }, [ranked, prefs.session, typeFilter, landFilter, clubMode]);
   const ratings = useMemo(() => ({ morning: ranked?.bySession.morning[0] ?? null, midday: ranked?.bySession.midday[0] ?? null, evening: ranked?.bySession.evening[0] ?? null }), [ranked]);
 
   const mapScores = useMemo(() => {
@@ -240,6 +270,16 @@ export default function App() {
     return h && h.windFrom != null ? { from: h.windFrom, downwind: (h.windFrom + 180) % 360 } : null;
   }, [selected, weather, windHourIdx]);
 
+  // Legal check used for banners and the outlook: the club's own rules in My club, otherwise the WMA/Forest probes.
+  const legalProbe = (date: string) => clubMode
+    ? [evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'private_club', zone: null, youthHunter: prefs.youthHunter, deerZone: 'C' })]
+    : [
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'A', youthHunter: prefs.youthHunter }),
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'B', youthHunter: prefs.youthHunter }),
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'D', youthHunter: prefs.youthHunter }),
+      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'C', youthHunter: prefs.youthHunter }),
+    ];
+
   // ---- 7-day outlook ----
   const outlook = useMemo<OutlookDay[]>(() => {
     if (!data || view !== 'outlook') return [];
@@ -255,11 +295,18 @@ export default function App() {
         date, sun: sunDay(date, wxPoint[0], wxPoint[1]), morning: m.recommendations[0] ?? null, evening: e.recommendations[0] ?? null,
         compareMorning: sel ? evaluateCandidate(sel, 'morning', ctx) : null, compareEvening: sel ? evaluateCandidate(sel, 'evening', ctx) : null,
         tMax: dw?.tMaxF ?? null, tMin: dw?.tMinF ?? null, precip: dw?.precipIn ?? null, windDom: dw?.windDominant ?? null, windMax: dw?.windMaxMph ?? null,
-        legal: evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'A', youthHunter: prefs.youthHunter }),
+        legal: legalProbe(date)[0],
       };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, view, prefs, weather, pins, selectedKey, normals]);
+  }, [data, view, prefs, weather, pins, selectedKey, normals, clubMode]);
+
+  // The walking network for whichever area is shown (Bankhead FS roads/trails, or the club's roads and parking pins).
+  const getNet = () => {
+    if (clubMode) return clubNet;
+    if (!netRef.current && data) netRef.current = buildWalkNetwork(data.fsRoads, data.trails, data.highways, data.recSites, data.checkStations);
+    return netRef.current;
+  };
 
   // Refine the open zone's walk-in on ~4 m lidar (online only; cached per zone for the session)
   useEffect(() => {
@@ -271,10 +318,12 @@ export default function App() {
     setLidar((m) => ({ ...m, [id]: 'loading' }));
     (async () => {
       try {
-        if (!netRef.current) netRef.current = buildWalkNetwork(data.fsRoads, data.trails, data.highways, data.recSites, data.checkStations);
+        const net = getNet();
+        if (!net) { setLidar((m) => ({ ...m, [id]: 'none' })); return; }
         const near = c.properties.routes[0];
         const radiusM = Math.min(2400, Math.max(1100, (near ? haversine(near.coord, c.properties.center) : 1200) + 350));
-        const r = await lidarRoute(c.properties.center, netRef.current, { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] }, { radiusM, signal: ctl.signal });
+        const layers = clubMode && club && clubData ? { walkable: club.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
+        const r = await lidarRoute(c.properties.center, net, layers, { radiusM, signal: ctl.signal });
         setLidar((m) => ({ ...m, [id]: r ?? 'none' }));
       } catch (e) {
         if (!ctl.signal.aborted) { console.error('lidar route', e); setLidar((m) => ({ ...m, [id]: 'error' })); }
@@ -282,7 +331,7 @@ export default function App() {
     })();
     return () => { ctl.abort(); setLidar((m) => (m[id] === 'loading' ? Object.fromEntries(Object.entries(m).filter(([k]) => k !== id)) : m)); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedKey?.id, data, online]);
+  }, [selectedKey?.id, data, online, clubMode]);
 
   // deep-linked selection: fit once the map and data exist
   const deepLinked = useRef(false);
@@ -290,6 +339,34 @@ export default function App() {
     if (!deepLinked.current && selected && mapRef.current && data) { deepLinked.current = true; setTimeout(() => fitZone(selected), 600); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, data]);
+
+  // Switching between Bankhead and My club: clear what's open and move the map there.
+  const lastArea = useRef(clubMode);
+  useEffect(() => {
+    if (lastArea.current === clubMode) return;
+    lastArea.current = clubMode;
+    setSelectedKey(null); setInspect(null); setSpots([]);
+    const m = mapRef.current;
+    if (!m) return;
+    if (clubMode && club) { const b = clubBounds(club.geometry); m.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: mapPadding(), maxZoom: 15.5, duration: 800 }); }
+    else m.flyTo({ center: BANKHEAD_CENTER, zoom: 9.9 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubMode]);
+  // ---- My club import ----
+  const importLandText = (text: string, filename = '') => {
+    try {
+      const { name, geometry } = parseLandFile(text, filename);
+      if (!hasTerrainData(geometry)) throw new Error('This app only has terrain data for one small area, and that boundary is not inside it, so zones cannot be built there.');
+      setClub({ name, geometry, saved: new Date().toISOString(), source: filename || 'pasted' });
+      setAreaPref('club');
+      setClubError(null);
+      setImportMsg(`Imported "${name}" (${polygonAcres(geometry).toFixed(0)} acres). It stays on this device.`);
+    } catch (e) {
+      setClubError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  const importLandFile = async (f: File) => importLandText(await f.text(), f.name);
+  const removeClub = () => { setClub(null); setAreaPref('bankhead'); setClubData(null); };
 
   // ---- offline areas ----
   const saveCurrentArea = async () => {
@@ -315,17 +392,21 @@ export default function App() {
   const removeSavedArea = async (a: SavedArea) => { await removeArea(a); setAreas((x) => x.filter((y) => y.id !== a.id)); };
 
   // ---- backup ----
-  const exportJson = () => downloadText(`bankhead-backup-${localDate()}.json`, JSON.stringify(makeBackup(pins, journal.entries, prefs, areas), null, 1));
+  const exportJson = () => downloadText(`bankhead-backup-${localDate()}.json`, JSON.stringify(makeBackup(pins, journal.entries, prefs, areas, club), null, 1));
   const exportGpxAll = () => downloadText(`bankhead-pins-${localDate()}.gpx`, pinsToGpx(pins), 'application/gpx+xml');
   const importFile = async (f: File) => {
     try {
       const text = await f.text();
+      // a bare boundary file (GeoJSON polygon or KML) goes to My club instead of the backup/pins path
+      const head = text.trimStart().slice(0, 4000);
+      if (/\.kml$/i.test(f.name) || /<kml[\s>]/i.test(head) || (/"type"\s*:\s*"(Feature|FeatureCollection|Polygon|MultiPolygon)"/.test(head) && !/bankhead-hunt-intelligence/.test(head))) { importLandText(text, f.name); return; }
       if (/\.gpx$/i.test(f.name) || text.trimStart().startsWith('<')) {
         const incoming = gpxToPins(text).map((p) => ({ ...p, id: uid(), created: new Date().toISOString() }));
         setPins((cur) => [...cur, ...incoming]);
         setImportMsg(`Imported ${incoming.length} pins from GPX.`);
       } else {
         const b = parseBackup(text);
+        if (b.club?.geometry) { setClub(b.club); setImportMsg('Restored your club boundary from the backup.'); }
         const before = { p: pins.length, j: journal.entries.length };
         setPins((cur) => mergeById(cur, b.pins));
         journal.setAll((cur) => mergeById(cur, b.journal));
@@ -368,12 +449,7 @@ export default function App() {
   const legalOnMap = useMemo(() => [...mapScores.values()].filter((v) => v != null).length, [mapScores]);
   const closedNote = useMemo(() => {
     if (!data || legalOnMap > 0) return null;
-    const probe = (date: string) => [
-      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'A', youthHunter: prefs.youthHunter }),
-      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'B', youthHunter: prefs.youthHunter }),
-      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'D', youthHunter: prefs.youthHunter }),
-      evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'C', youthHunter: prefs.youthHunter }),
-    ];
+    const probe = legalProbe;
     let opens: string | null = null;
     for (let i = 1; i <= 150 && !opens; i++) { const d = addDays(prefs.date, i); if (probe(d).some((r) => r.status === 'verified_allowed')) opens = d; }
     const why = probe(prefs.date)[0].summary.replace(/ on \d{4}-\d{2}-\d{2}/, '');
@@ -381,12 +457,13 @@ export default function App() {
     const target = prefs.target === 'doe' ? ' for does' : prefs.target === 'mature_buck' ? ' for bucks' : '';
     return { title: `${weaponName}${target} isn't legal ${fmtDate(prefs.date, { weekday: 'short', month: 'numeric', day: 'numeric' })}`, opens: opens ? `Opens ${fmtDate(opens, { weekday: 'short', month: 'numeric', day: 'numeric' })}` : 'Not open again this season', why };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, legalOnMap, prefs.date, prefs.weapon, prefs.target, prefs.youthHunter]);
-  // Youth gun weekend: Oct 30–Nov 2 (Zone D / NF) and Oct 31–Nov 1 (WMA). Offer the one-tap kid setup.
-  const youthDay = (d: string) => d >= '2026-10-30' && d <= '2026-11-02';
+  }, [data, legalOnMap, prefs.date, prefs.weapon, prefs.target, prefs.youthHunter, clubMode]);
+  // Youth gun weekend: offer the one-tap kid setup.
+  // Bankhead: Oct 30–Nov 2 (Zone D). The club is Deer Zone C private land, whose youth gun hunt is Nov 13–16.
+  const youthDay = (d: string) => (clubMode ? d >= '2026-11-13' && d <= '2026-11-16' : d >= '2026-10-30' && d <= '2026-11-02');
   const youthBanner = youthDay(prefs.date) && !prefs.withKid && (
     <div className="youth-banner" role="status">
-      <div><b>Youth gun hunt {fmtDate(prefs.date, { weekday: 'short', month: 'numeric', day: 'numeric' })}</b> · kids under 16 with a supervisor{prefs.date === '2026-10-30' || prefs.date === '2026-11-02' ? ' (National Forest only this day)' : ''}</div>
+      <div><b>Youth gun hunt {fmtDate(prefs.date, { weekday: 'short', month: 'numeric', day: 'numeric' })}</b> · kids under 16 with a supervisor{!clubMode && (prefs.date === '2026-10-30' || prefs.date === '2026-11-02') ? ' (National Forest only this day)' : ''}</div>
       <div className="row"><button className="btn btn-primary small" onClick={() => setPrefs({ ...prefs, withKid: true, youthHunter: true, weapon: 'rifle', effort: 'easy', maxWalkMeters: 1000, stand: 'ground', session: 'compare' })}>Set up for a kid</button><button className="btn small" onClick={() => setShowForm(true)}>Settings</button></div>
     </div>
   );
@@ -425,11 +502,13 @@ export default function App() {
     if (!data) return;
     try {
       setChecking('Loading terrain…');
-      const grid = await loadGrid();
-      if (!netRef.current) { setChecking('Building trail network…'); await new Promise((r) => setTimeout(r, 0)); netRef.current = buildWalkNetwork(data.fsRoads, data.trails, data.highways, data.recSites, data.checkStations); }
+      const grid = await loadGrid(clubMode ? 'club' : 'bankhead');
+      setChecking('Building trail network…');
+      await new Promise((r) => setTimeout(r, 0));
+      const net = getNet();
       setChecking('Analyzing…');
       await new Promise((r) => setTimeout(r, 0));
-      const res = analyzeSpot(grid, data, netRef.current, pt);
+      const res = analyzeSpot(grid, data, net, pt, clubMode && club ? { club: club.geometry } : {});
       if ('error' in res) { setChecking(null); alert(res.error); return; }
       setSpots((x) => [...x.slice(-9), res]);
       const date = opts.date && opts.date >= localDate() ? opts.date : prefs.date;
@@ -502,7 +581,7 @@ export default function App() {
         const p: [number, number] = [pos.coords.longitude, pos.coords.latitude];
         setUserLoc(p);
         setPrefs({ ...prefs, start: p });
-        setGpsStatus(`±${Math.round(pos.coords.accuracy)} m${inStudyArea(p) ? '' : ' · outside Bankhead study area'}`);
+        setGpsStatus(`±${Math.round(pos.coords.accuracy)} m${inStudyArea(p) || inClubBox(p) ? '' : ' · outside the areas this app covers'}`);
         flyTo(p, 13);
       },
       (err) => setGpsStatus(`GPS error: ${err.message}`),
@@ -524,7 +603,7 @@ export default function App() {
     a.click();
   };
 
-  const jur = inspect && data ? lookupJurisdiction(data, inspect) : null;
+  const jur = inspect && data ? (clubMode && club ? lookupClubJurisdiction(club.geometry, inspect) : lookupJurisdiction(data, inspect)) : null;
   const jurLegal = jur ? evaluateLegal({ date: prefs.date, weapon: prefs.weapon, target: prefs.target, jurisdiction: jur.kind, zone: jur.zone, youthHunter: prefs.youthHunter, deerZone: jur.deerZone }) : null;
   const saved = selected ? pins.some((p) => p.kind === 'saved_candidate' && p.candidateId === selected.areaId) : false;
   const ex = ranked?.excluded;
@@ -532,10 +611,16 @@ export default function App() {
   return (
     <div className={`app view-${view}`}>
       <header className="topbar">
-        <div className="brand"><span className="logo">◭</span><div><b className="brand-name">BANKHEAD HUNT INTELLIGENCE</b><b className="page-title">{PAGE_TITLE[view]}</b><div className="tiny muted">{fmtDate(localDate())}{!online && ' · OFFLINE — cached data'}</div></div></div>
+        <div className="brand"><span className="logo">◭</span><div><b className="brand-name">{clubMode && club ? club.name.toUpperCase() : 'BANKHEAD HUNT INTELLIGENCE'}</b><b className="page-title">{PAGE_TITLE[view]}</b><div className="tiny muted">{fmtDate(localDate())}{!online && ' · OFFLINE — cached data'}</div></div></div>
+        {club && (
+          <div className="area-switch" role="radiogroup" aria-label="Area">
+            <button role="radio" aria-checked={!clubMode} className={!clubMode ? 'on' : ''} onClick={() => setAreaPref('bankhead')}>Bankhead</button>
+            <button role="radio" aria-checked={clubMode} className={clubMode ? 'on' : ''} onClick={() => setAreaPref('club')}>{clubData || !club ? 'My club' : 'My club…'}</button>
+          </div>
+        )}
         {!standalone && (installEvt || isIOS) && <button className="btn small install-btn" onClick={onInstall}>⤓ Install</button>}
       </header>
-      <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} landFilter={landFilter} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
+      <MapView data={data} base={base} layers={layers} scores={mapScores} setups={setups} typeFilter={typeFilter} landFilter={clubMode ? 'all' : landFilter} clubBoundary={clubMode && club ? club.geometry : null} clubRoads={clubMode && clubData ? clubData.roads : null} selected={selected} windHour={windHour} userLoc={userLoc} pins={pins} startPin={prefs.start} onCandidate={onCandidate} onInspect={onInspect} mapRef={mapRef} />
       <div className="map-top">
         {!isMobile && closedBanner}
         {!isMobile && youthBanner}
@@ -546,13 +631,13 @@ export default function App() {
           <span className="muted">legal {fmtTime(mapSun.legalStart)}–{fmtTime(mapSun.legalEnd)}</span>
         </div>
         <div className="type-chips" role="group" aria-label="Filter hunting areas">
-          {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
-            <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => c.properties.type === t && (landFilter === 'all' || (landFilter === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma'))).length}</small> : null}</button>
+          {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms'], ['spot', 'Other']] as [ZoneTypeFilter, string][]).filter(([t]) => !clubMode ? t !== 'spot' : t === 'all' || (data?.candidates.some((c) => c.properties.type === t) ?? false)).map(([t, l]) => (
+            <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => c.properties.type === t && (clubMode || landFilter === 'all' || (landFilter === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma'))).length}</small> : null}</button>
           ))}
           <i className="chip-sep" aria-hidden="true" />
           {kidChip}
-          <i className="chip-sep" aria-hidden="true" />
-          {([['all', 'All land'], ['wma', 'WMA'], ['nf', 'Nat\'l Forest']] as [LandFilter, string][]).map(([t, l]) => (
+          {!clubMode && <i className="chip-sep" aria-hidden="true" />}
+          {!clubMode && ([['all', 'All land'], ['wma', 'WMA'], ['nf', 'Nat\'l Forest']] as [LandFilter, string][]).map(([t, l]) => (
             <button key={'land-' + t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on land' : 'land'} onClick={() => setLandFilter(t)}>{l}{t !== 'all' && data ? <small> {data.candidates.filter((c) => (t === 'nf') === (c.properties.jurisdiction === 'nf_outside_wma')).length}</small> : null}</button>
           ))}
         </div>
@@ -679,20 +764,20 @@ export default function App() {
                   <SettingsBar prefs={prefs} onOpen={() => setShowForm(true)} />
                   <TodayCard date={prefs.date} sun={sun} weather={weather} weatherError={weatherError} alerts={alerts} alertsError={alertsError} ratings={ratings} onRefresh={() => refreshWeather(true)} refreshing={refreshing} selected={null} windHourIdx={windHourIdx} setWindHourIdx={setWindHourIdx} />
                   <section className="card">
-                    <h2>Top hunting areas{prefs.withKid && <span className="muted"> · kid-friendly</span>}{typeFilter !== 'all' && <span className="muted"> · {({ saddle: 'saddles', bench: 'benches', spur: 'spurs', bottom: 'creek bottoms' } as Record<string, string>)[typeFilter]} only</span>}</h2>
+                    <h2>Top hunting areas{prefs.withKid && <span className="muted"> · kid-friendly</span>}{typeFilter !== 'all' && <span className="muted"> · {({ saddle: 'saddles', bench: 'benches', spur: 'spurs', bottom: 'creek bottoms', spot: 'other landforms' } as Record<string, string>)[typeFilter]} only</span>}</h2>
                     {prefs.withKid && <p className="tiny muted">Walks ≤ 15 min and no steep footing; short, open, close-to-the-truck spots score highest.</p>}
-                    <div className="type-chips inline" role="radiogroup" aria-label="Filter by land">
+                    {!clubMode && <div className="type-chips inline" role="radiogroup" aria-label="Filter by land">
                       {([['all', 'All land'], ['wma', 'WMA'], ['nf', 'National Forest']] as [LandFilter, string][]).map(([t, l]) => (
                         <button key={t} role="radio" aria-checked={landFilter === t} className={landFilter === t ? 'on' : ''} onClick={() => setLandFilter(t)}>{l}</button>
                       ))}
-                    </div>
+                    </div>}
                     <div className="type-chips inline" role="radiogroup" aria-label="Filter by terrain type">
-                      {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms']] as [ZoneTypeFilter, string][]).map(([t, l]) => (
+                      {([['all', 'All'], ['saddle', 'Saddles'], ['bench', 'Benches'], ['spur', 'Spurs'], ['bottom', 'Bottoms'], ['spot', 'Other']] as [ZoneTypeFilter, string][]).filter(([t]) => !clubMode ? t !== 'spot' : t === 'all' || (data?.candidates.some((c) => c.properties.type === t) ?? false)).map(([t, l]) => (
                         <button key={t} role="radio" aria-checked={typeFilter === t} className={typeFilter === t ? 'on' : ''} onClick={() => setTypeFilter(t)}>{l}</button>
                       ))}
                     </div>
                     <p className="tiny muted">{fmtDate(prefs.date, { weekday: 'short', month: 'short', day: 'numeric' })} · {prefs.session === 'compare' || prefs.session === 'all' ? 'all sessions' : prefs.session} · ranked among {data?.candidates.length ?? '…'} terrain-derived zones. {ex && `${ex.prohibited ? `${ex.prohibited} zone-sessions excluded as not legal; ` : ''}${ex.overDistance ? `${ex.overDistance} beyond your walking limit.` : ''}`}</p>
-                    {recs.length === 0 && data && <p className="warn small">No legally eligible zones match these settings. {evaluateLegal({ date: prefs.date, weapon: prefs.weapon, target: prefs.target, jurisdiction: 'black_warrior_wma', zone: 'A', youthHunter: prefs.youthHunter }).summary}</p>}
+                    {recs.length === 0 && data && <p className="warn small">No legally eligible zones match these settings. {legalProbe(prefs.date)[0].summary}</p>}
                     {recs.map((r, i) => <RecCard key={r.id} rec={r} rank={i + 1} active={false} onOpen={() => openRec(r)} />)}
                   </section>
                   <button className="btn big" onClick={() => setShowForm(true)}>Change date, weapon or session</button>
@@ -712,6 +797,7 @@ export default function App() {
           {view === 'sources' && (
             <>
               {!standalone && <section className="card install-card"><h2>Use it like an app</h2><p className="small">Add Bankhead Hunt to your home screen to open it full-screen and keep viewed map tiles for weak-signal areas.</p><button className="btn btn-primary" onClick={onInstall}>⤓ Install / Add to Home Screen</button></section>}
+              <ClubPanel club={club} acres={club ? polygonAcres(club.geometry) : 0} zones={clubZones.length} clubMode={clubMode} parking={parkingPins.length} error={clubError} onImport={importLandFile} onPaste={(t) => importLandText(t, '')} onRemove={removeClub} onShow={() => { setAreaPref('club'); if (isMobile) switchTab('map'); }} />
               <OfflinePanel areas={areas} onSaveCurrent={() => { if (isMobile) switchTab('map'); saveCurrentArea(); }} onRemove={removeSavedArea} onShow={(a) => { if (isMobile) switchTab('map'); mapRef.current?.fitBounds([[a.bbox[0], a.bbox[1]], [a.bbox[2], a.bbox[3]]], { padding: 20 }); }} progress={dlProgress} cachedTiles={cachedTiles} online={online} />
               <SourcesPanel registry={data?.registry ?? null} />
             </>

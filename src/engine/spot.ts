@@ -3,7 +3,8 @@
 // and routes the walk-in over the FS road / NFS trail network. Results feed the normal scoring engine.
 import type { FeatureCollection, LineString, MultiLineString, Point, Position } from 'geojson';
 import type { Candidate, CandidateProps, RouteOption } from './types';
-import { bearingTo, haversine, lookupJurisdiction, type Layers } from './geography';
+import { bearingTo, haversine, lookupClubJurisdiction, lookupJurisdiction, type Layers } from './geography';
+import type { MultiPolygon, Polygon } from 'geojson';
 import { roadDistance } from './roads';
 
 export interface TerrainGrid {
@@ -26,19 +27,21 @@ export function parseGrid(meta: { bbox: [number, number, number, number]; width:
   return { ...meta, elev, slope, aspect, tpiL, tpiS, distStream, mask, hab };
 }
 
-let gridPromise: Promise<TerrainGrid> | null = null;
-export function loadGrid(base = import.meta.env?.BASE_URL ?? '/'): Promise<TerrainGrid> {
-  gridPromise ??= (async () => {
-    const meta = await (await fetch(`${base}data/terrain-grid.json`)).json();
-    const res = await fetch(`${base}data/terrain-grid.bin.gz`);
+export type GridArea = 'bankhead' | 'club';
+const gridPromises = new Map<GridArea, Promise<TerrainGrid>>();
+export function loadGrid(area: GridArea = 'bankhead', base = import.meta.env?.BASE_URL ?? '/'): Promise<TerrainGrid> {
+  const dir = area === 'club' ? 'data/club/' : 'data/';
+  if (!gridPromises.has(area)) gridPromises.set(area, (async () => {
+    const meta = await (await fetch(`${base}${dir}terrain-grid.json`)).json();
+    const res = await fetch(`${base}${dir}terrain-grid.bin.gz`);
     if (!res.ok || !res.body) throw new Error(`Terrain grid unavailable (${res.status})`);
     // Hosting may or may not have already decoded it; detect the gzip magic number.
     const raw = await res.arrayBuffer();
     const head = new Uint8Array(raw, 0, 2);
     const buf = head[0] === 0x1f && head[1] === 0x8b ? await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer() : raw;
     return parseGrid(meta, buf);
-  })().catch((e) => { gridPromise = null; throw e; });
-  return gridPromise;
+  })().catch((e) => { gridPromises.delete(area); throw e; }));
+  return gridPromises.get(area)!;
 }
 
 // ---------- grid helpers ----------
@@ -251,9 +254,16 @@ function landformAt(g: TerrainGrid, i: number): string {
 
 let spotSeq = 0;
 
-export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | null, pt: [number, number]): Candidate | { error: string } {
+export interface SpotOptions {
+  /** The user's club boundary: spots inside it are the club (private land); anything else is not huntable. */
+  club?: Polygon | MultiPolygon;
+  /** Generate a club zone (typed by the nearest landform feature, labelled by landform) rather than a one-off checked spot. */
+  asZone?: boolean;
+}
+
+export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | null, pt: [number, number], opts: SpotOptions = {}): Candidate | { error: string } {
   const c = cellOf(g, pt);
-  if (!c) return { error: 'This spot is outside the Bankhead study area.' };
+  if (!c) return { error: 'This spot is outside the area with terrain data (Bankhead National Forest, or your club\'s area).' };
   // nearest qualifying feature within 150 m sets the feature type (else a generic spot)
   let feat: (typeof FEATURES)[number] | null = null, featD = Infinity;
   for (const f of FEATURES) {
@@ -317,16 +327,18 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
   if (habitat.developedAg > 0.4) t -= 0.15;
   const terrainScore = Math.round(Math.max(0, Math.min(1, t)) * 100);
 
-  const j = lookupJurisdiction(layers, pt);
+  const j = opts.club ? lookupClubJurisdiction(opts.club, pt) : lookupJurisdiction(layers, pt);
   const route = net ? routeToSpot(net, g, pt) : null;
   const landform = landformAt(g, c.i);
-  const label = f0 ? `${f0.label}${featD > 40 ? ` (${Math.round(featD)} m away)` : ''}` : `Checked spot — ${landform}`;
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+  const label = opts.asZone ? (f0 ? f0.label : cap(landform)) : f0 ? `${f0.label}${featD > 40 ? ` (${Math.round(featD)} m away)` : ''}` : `Checked spot — ${landform}`;
   // distance to roads/trails: reuse the network nodes
   let distRoad = roadDistance(pt, 3000);
   if (!Number.isFinite(distRoad) && net) for (const s of net.starts) distRoad = Math.min(distRoad, haversine(net.nodes[s.node], pt));
   const props: CandidateProps = {
     id: `SPOT-${++spotSeq}`,
-    type: 'spot',
+    type: opts.asZone ? f0?.type ?? 'spot' : 'spot',
+    club: j.kind === 'private_club' ? true : undefined,
     label,
     terrainScore,
     center: [+pt[0].toFixed(6), +pt[1].toFixed(6)],
@@ -363,7 +375,7 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
   return { geometry: circle(pt, 100), properties: props };
 }
 
-function circle(c: [number, number], rM: number) {
+export function circle(c: [number, number], rM: number) {
   const ring: [number, number][] = [];
   for (let a = 0; a <= 360; a += 15) {
     const r = (a * Math.PI) / 180;

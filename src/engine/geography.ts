@@ -58,7 +58,7 @@ function nearestOnLine(coords: Position[], p: [number, number]) {
   return best;
 }
 
-export type JurisdictionKind = 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown';
+export type JurisdictionKind = 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown' | 'private_club';
 
 export interface Jurisdiction {
   kind: JurisdictionKind;
@@ -136,4 +136,21 @@ export function lookupJurisdiction(layers: Layers, pt: [number, number]): Jurisd
   if (inNfAdmin) notes.push('Inside the National Forest administrative boundary, but not Forest Service-owned per USFS ownership data — likely a private inholding.');
   else notes.push('Outside Bankhead National Forest and Black Warrior WMA.');
   return { kind: 'private_or_unknown', label: inNfAdmin ? 'Private / non-FS inholding' : 'Outside public hunting land', inWma, inNfAdmin, fsOwned, wilderness, zone: null, provisionalZone: null, distToDividerM: null, deerZone: null, notes };
+}
+
+// ---------- the user's own hunting club (boundary lives only on the user's device) ----------
+export const CLUB_LABEL = 'My club · private land · Deer Zone C';
+
+/** Jurisdiction for a point inside the user's imported club boundary. */
+export function clubJurisdiction(): Jurisdiction {
+  return {
+    kind: 'private_club', label: CLUB_LABEL, inWma: false, inNfAdmin: false, fsOwned: false, wilderness: false, zone: null, provisionalZone: null, distToDividerM: null, deerZone: 'C',
+    notes: ['Your club: private land under the statewide private-land deer seasons for Deer Zone C. Your own club rules apply on top of state law.', 'Boundary comes from the file you imported on this device; confirm it against your lease or survey.'],
+  };
+}
+
+/** Inside the club boundary → the club; anywhere else → not huntable by this app (other people's land). */
+export function lookupClubJurisdiction(club: Polygon | MultiPolygon, pt: [number, number]): Jurisdiction {
+  if (polygonContains(club, pt)) return clubJurisdiction();
+  return { kind: 'private_or_unknown', label: 'Outside your club boundary', inWma: false, inNfAdmin: false, fsOwned: null, wilderness: false, zone: null, provisionalZone: null, distToDividerM: null, deerZone: null, notes: ['This point is outside the club boundary you imported. It is someone else\'s land unless you have permission.'] };
 }

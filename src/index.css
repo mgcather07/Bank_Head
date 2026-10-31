@@ -383,3 +383,10 @@ button.rating { color: var(--text); font: inherit; cursor: pointer; }
 .kid-chip { flex: none; background: rgba(14, 20, 16, .9); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: .82rem; font-weight: 600; min-height: 34px; cursor: pointer; white-space: nowrap; }
 .kid-chip.on { background: #5fbf5a; color: #0c1a0b; border-color: #5fbf5a; }
 .type-chips.inline button.on { background: var(--accent); color: #1a1407; border-color: var(--accent); }
+
+/* My club: area switch + import card */
+.area-switch { display: inline-flex; border: 1px solid var(--line, #ffffff30); border-radius: 999px; overflow: hidden; margin-left: auto; }
+.area-switch button { background: transparent; color: inherit; border: 0; padding: 6px 12px; font-size: 13px; min-height: 36px; cursor: pointer; }
+.area-switch button.on { background: var(--accent); color: #1a1407; font-weight: 700; }
+.club-card .club-paste { margin: 8px 0; }
+.club-card textarea { width: 100%; box-sizing: border-box; margin: 6px 0; background: #0e1410; color: inherit; border: 1px solid #ffffff30; border-radius: 8px; padding: 8px; font: 12px/1.3 ui-monospace, monospace; }

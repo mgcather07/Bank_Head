@@ -85,7 +85,7 @@ export interface LegalQuery {
   date: string;
   weapon: Weapon;
   target: Target;
-  jurisdiction: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown';
+  jurisdiction: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown' | 'private_club';
   zone: Zone | null;
   youthHunter?: boolean;
   /** Statewide deer zone (only used off the WMA). null = near the C/D line or outside modeled counties. */
@@ -159,6 +159,15 @@ function evalZone(q: LegalQuery, zone: Zone): LegalEvaluation {
   return result('verified_allowed', `${huntName} open in Zone ${zone} for ${weaponLabel(weapon).toLowerCase()}.`, { huntName, bag, antlerRestriction, requirements, exceptions });
 }
 
+/** The user's own hunting club: private land under the statewide private-land seasons (Deer Zone C). */
+function evaluatePrivateClub(q: LegalQuery): LegalEvaluation {
+  if (q.date < STATEWIDE_SOURCE.validFrom || q.date > STATEWIDE_SOURCE.validTo) return result('requires_verification', `Regulations require verification — statewide seasons loaded only for ${STATEWIDE_SOURCE.version}.`);
+  const zone = q.deerZone ?? CLUB_DEER_ZONE;
+  if (!STATEWIDE_PRIVATE[zone]) return result('requires_verification', `Regulations require verification — private-land seasons for Deer Zone ${zone} are not loaded.`);
+  const ev = evalStatewideZone(q, zone, 'private');
+  return { ...ev, exceptions: [...ev.exceptions, 'Deer zone follows the county list on the 2026-27 season page (Jefferson County is listed under Zone C); the zone map on that page is labelled "Proposed".'] };
+}
+
 export function evaluateLegal(q: LegalQuery): LegalEvaluation {
   if (q.date < REG_SOURCE.validFrom || q.date > REG_SOURCE.validTo) {
     return result('requires_verification', `Regulations require verification — the loaded rule set (${REG_SOURCE.version}) does not cover ${q.date}.`);
@@ -166,6 +175,7 @@ export function evaluateLegal(q: LegalQuery): LegalEvaluation {
   if (q.jurisdiction === 'private_or_unknown') {
     return result('verified_prohibited', 'Public hunting access is not established at this location (private inholding or non-public land). No recommendation is generated here.');
   }
+  if (q.jurisdiction === 'private_club') return evaluatePrivateClub(q);
   if (q.jurisdiction === 'nf_outside_wma') return evaluateStatewide(q);
   if (q.zone) return evalZone(q, q.zone);
   // Zone unknown (near the AL 33 divider): only allowed if both zones agree.
@@ -219,6 +229,21 @@ export const STATEWIDE_PUBLIC: Record<DeerZone, SwPeriod[]> = {
   ],
 };
 
+/** Private-land seasons (the user's own club). Transcribed 2026-10-31 from the same official page, private-land columns.
+ *  Only Deer Zone C is loaded: Jefferson County (Warrior/Trafford) is listed under Zone C. Stalk (still) hunting dates. */
+export const STATEWIDE_PRIVATE: Partial<Record<DeerZone, SwPeriod[]>> = {
+  C: [
+    { kind: 'archery', start: '2026-10-15', end: '2027-02-10', eitherSex: true, name: 'Archery' },
+    { kind: 'youth_gun', start: '2026-11-13', end: '2026-11-16', eitherSex: true, name: 'Special youth gun' },
+    { kind: 'muzzleloader', start: '2026-11-16', end: '2026-11-20', eitherSex: true, name: 'Special muzzleloader / air rifle (stalk only)' },
+    { kind: 'gun', start: '2026-11-21', end: '2026-11-29', eitherSex: true, name: 'Gun, private land (either sex)' },
+    { kind: 'gun', start: '2026-11-30', end: '2026-12-11', eitherSex: false, name: 'Gun, private land (bucks only)' },
+    { kind: 'gun', start: '2026-12-12', end: '2027-01-01', eitherSex: true, name: 'Gun, private land (either sex)' },
+    { kind: 'gun', start: '2027-01-02', end: '2027-02-10', eitherSex: false, name: 'Gun, private land (bucks only)' },
+  ],
+};
+export const CLUB_DEER_ZONE: DeerZone = 'C';
+
 const SW_BAG: Record<DeerZone, string> = {
   D: 'One antlered buck per day and up to two unantlered deer per day (unantlered limit applies during archery, special muzzleloader and youth seasons and either-sex gun days).',
   C: 'One unantlered deer and one antlered buck per day.',
@@ -232,24 +257,31 @@ const SW_REQUIREMENTS = [
   'Know the boundary: private inholdings are common inside the National Forest.',
 ];
 
-export function swPeriodsOn(date: string, zone: DeerZone) {
-  return STATEWIDE_PUBLIC[zone].filter((p) => within(date, p.start, p.end));
+export function swPeriodsOn(date: string, zone: DeerZone, land: 'public' | 'private' = 'public') {
+  return (land === 'private' ? STATEWIDE_PRIVATE[zone] ?? [] : STATEWIDE_PUBLIC[zone]).filter((p) => within(date, p.start, p.end));
 }
+
+const SW_REQUIREMENTS_PRIVATE = [
+  'Hunt only with your club or landowner\'s permission, and follow the club\'s own rules (stands, harvest, guests) in addition to state law.',
+  'Alabama hunting license as applicable to you (all-game or resident/non-resident); landowner exemptions are not checked here.',
+  'Report harvested deer through Game Check.',
+  'Hunter-orange rules are written for public land; wear orange during gun seasons as a safety precaution and follow your club\'s rule.',
+];
 
 export function isStatewideGunDay(date: string, zone: DeerZone | null): boolean {
   if (!zone) return (['C', 'D'] as DeerZone[]).some((z) => swPeriodsOn(date, z).some((p) => p.kind === 'gun'));
   return swPeriodsOn(date, zone).some((p) => p.kind === 'gun' || p.kind === 'muzzleloader');
 }
 
-function evalStatewideZone(q: LegalQuery, zone: DeerZone): LegalEvaluation {
-  const active = swPeriodsOn(q.date, zone);
-  const requirements = [...SW_REQUIREMENTS];
+function evalStatewideZone(q: LegalQuery, zone: DeerZone, land: 'public' | 'private' = 'public'): LegalEvaluation {
+  const active = swPeriodsOn(q.date, zone, land);
+  const requirements = [...(land === 'private' ? SW_REQUIREMENTS_PRIVATE : SW_REQUIREMENTS)];
   const exceptions: string[] = [];
   const youth = active.find((p) => p.kind === 'youth_gun');
   const gun = active.find((p) => p.kind === 'gun');
   const muzz = active.find((p) => p.kind === 'muzzleloader');
-  if (gun || youth || muzz) requirements.push('A gun or youth deer season is open — hunter-orange requirements apply; see Alabama statewide regulations.');
-  if (youth) exceptions.push(`Special youth gun season (${youth.start}–${youth.end}): hunters under 16 with a licensed adult. Other legal seasons stay open on public land.`);
+  if ((gun || youth || muzz) && land === 'public') requirements.push('A gun or youth deer season is open — hunter-orange requirements apply; see Alabama statewide regulations.');
+  if (youth) exceptions.push(`Special youth gun season (${youth.start}–${youth.end}): hunters under 16 with a licensed adult. Other legal seasons stay open on ${land} land.`);
   let period: SwPeriod | undefined;
   if (q.weapon === 'bow' || q.weapon === 'crossbow') period = active.find((p) => p.kind === 'archery');
   else if (q.weapon === 'muzzleloader') period = gun ?? muzz ?? (q.youthHunter ? youth : undefined);
@@ -258,7 +290,7 @@ function evalStatewideZone(q: LegalQuery, zone: DeerZone): LegalEvaluation {
   const src = { id: STATEWIDE_SOURCE.id, title: STATEWIDE_SOURCE.title, url: STATEWIDE_SOURCE.url, version: STATEWIDE_SOURCE.version };
   if (!period) {
     const msg = active.length
-      ? `${weaponLabel(q.weapon)} is not legal on ${q.date} in Deer Zone ${zone} (public land). Open: ${active.map((p) => p.name).join(', ')}${youth && !q.youthHunter ? ' (youth season is for hunters under 16)' : ''}.`
+      ? `${weaponLabel(q.weapon)} is not legal on ${q.date} in Deer Zone ${zone} (${land} land). Open: ${active.map((p) => p.name).join(', ')}${youth && !q.youthHunter ? ' (youth season is for hunters under 16)' : ''}.`
       : `No deer season is open on ${q.date} in Deer Zone ${zone}.`;
     return { status: 'verified_prohibited', summary: msg, huntName: null, bag: null, antlerRestriction: SW_BUCK_RULE, requirements, exceptions, ruleSource: src };
   }
@@ -267,8 +299,8 @@ function evalStatewideZone(q: LegalQuery, zone: DeerZone): LegalEvaluation {
   }
   return {
     status: 'verified_allowed',
-    summary: `${period.name} open on National Forest land in Deer Zone ${zone} for ${weaponLabel(q.weapon).toLowerCase()}.`,
-    huntName: `${period.name} (Zone ${zone}, public land)`,
+    summary: `${period.name} open on ${land === 'private' ? 'private land' : 'National Forest land'} in Deer Zone ${zone} for ${weaponLabel(q.weapon).toLowerCase()}.`,
+    huntName: `${period.name} (Zone ${zone}, ${land} land)`,
     bag: period.eitherSex ? SW_BAG[zone] : 'One antlered buck per day',
     antlerRestriction: SW_BUCK_RULE,
     requirements, exceptions, ruleSource: src,

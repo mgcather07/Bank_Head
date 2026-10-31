@@ -48,6 +48,8 @@ export interface RouteOption {
 export interface CandidateProps {
   id: string;
   type: 'saddle' | 'bench' | 'spur' | 'bottom' | 'spot';
+  /** Set on club zones so the app can tell them from checked spots. */
+  club?: boolean;
   label: string;
   terrainScore: number;
   center: [number, number];
@@ -87,7 +89,7 @@ export interface CandidateProps {
   areaHa: number;
   routes: RouteOption[];
   /** Set for user-checked spots; generated candidates are always inside the WMA on FS land. */
-  jurisdiction?: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown';
+  jurisdiction?: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown' | 'private_club';
   landform?: string;
   /** Statewide deer zone (C or D); null near the C/D line. WMA zones use the WMA calendar. */
   deerZone?: 'C' | 'D' | null;

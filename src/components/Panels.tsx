@@ -282,7 +282,7 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
         <button className="btn" onClick={onSave} disabled={saved}>{saved ? '★ Saved' : '☆ Save zone'}</button>
         <button className="btn" onClick={onJournal}>Log hunt</button>
         {onShowMap && <button className="btn mobile-only" onClick={onShowMap}>🗺 Show on map</button>}
-        <button className="btn" onClick={() => shareZone(rec)}>⇪ Share</button>
+        {!rec.candidate.club && <button className="btn" onClick={() => shareZone(rec)}>⇪ Share</button>}
       </div>
       <p className="tiny muted">This is a scouting zone, not a verified stand location or proof that deer are present.</p>
       {plan && <PlanCard plan={plan} />}
@@ -340,7 +340,7 @@ export function RecDetail({ rec, compare, onClose, onSave, saved, onNavigate, on
             <li>Approach heading {compass(p.routes.find((r) => r.accessPointId === rec.route!.verifiedAccessPointId)?.approachBearing ?? null)}.</li>
           </ul>
         ) : <p className="small">No access point within range.</p>}
-        {lidarStatus && <p className={`tiny ${lidarStatus === 'done' ? 'lidar-ok' : 'muted'}`}>{lidarStatus === 'done' ? '✓ Route refined on USGS lidar — follows old roadbeds and benches where they exist.' : lidarStatus === 'loading' ? 'Refining route with lidar…' : lidarStatus === 'offline' ? 'Offline — showing the 10 m terrain route. Lidar refinement needs signal.' : lidarStatus === 'none' ? 'Lidar found no better walkable line here; showing the 10 m terrain route.' : 'Lidar refinement unavailable right now; showing the 10 m terrain route.'}</p>}
+        {lidarStatus && (() => { const base = rec.candidate.club ? 'estimated route along mapped roads' : '10 m terrain route'; return <p className={`tiny ${lidarStatus === 'done' ? 'lidar-ok' : 'muted'}`}>{lidarStatus === 'done' ? '✓ Route refined on USGS lidar — follows old roadbeds and benches where they exist.' : lidarStatus === 'loading' ? 'Refining route with lidar…' : lidarStatus === 'offline' ? `Offline — showing the ${base}. Lidar refinement needs signal.` : lidarStatus === 'none' ? `Lidar found no better walkable line here; showing the ${base}.` : `Lidar refinement unavailable right now; showing the ${base}.`}</p>; })()}
         {rec.route && rec.route.profile?.length > 2 && <Profile profile={rec.route.profile} offTrailM={rec.route.offTrailMeters} gainInM={rec.route.elevationGainMeters ?? 0} />}
         <p className="tiny muted">Road appearance does not prove legal vehicle access. Check the USFS Motor Vehicle Use Map and posted gates.</p>
       </Sec>
@@ -490,6 +490,39 @@ export function BackupPanel({ onExportJson, onExportGpx, onImport, counts }: { o
   );
 }
 
+// ---------------- My club (private land; stays on this device) ----------------
+export function ClubPanel({ club, acres, zones, clubMode, parking, error, onImport, onPaste, onRemove, onShow }: {
+  club: { name: string; saved: string } | null; acres: number; zones: number; clubMode: boolean; parking: number; error: string | null;
+  onImport: (file: File) => void; onPaste: (text: string) => void; onRemove: () => void; onShow: () => void;
+}) {
+  const [paste, setPaste] = useState('');
+  return (
+    <section className="card club-card">
+      <h2>My club <span className="pill pill-na">private</span></h2>
+      {!club ? (
+        <p className="small">Add your hunting club&apos;s boundary to rank zones, check any spot and get a hunt plan on your own land. <b>The boundary is stored only on this device. It is never uploaded and is not part of this website.</b></p>
+      ) : (
+        <>
+          <p className="small"><b>{club.name}</b> · {acres.toFixed(0)} acres · {zones} scouting zones{parking ? ` · ${parking} parking pin${parking > 1 ? 's' : ''}` : ''}</p>
+          <p className="tiny muted">Saved on this device {new Date(club.saved).toLocaleDateString()}. Deer Zone C private-land seasons apply (Jefferson County). Walk-ins start from mapped roads and any <b>parking</b> pins you drop (tap the map, then Add pin).</p>
+        </>
+      )}
+      <div className="row wrap">
+        {club && <button className="btn btn-primary" onClick={onShow}>{clubMode ? 'Showing My club' : 'Show My club'}</button>}
+        <label className="btn file-btn">{club ? '⤒ Replace boundary' : '⤒ Import boundary file'}<input type="file" accept=".geojson,.json,.kml,.gpx,application/json,application/geo+json,application/gpx+xml,application/vnd.google-earth.kml+xml" onChange={(e) => { const f = e.target.files?.[0]; if (f) onImport(f); e.currentTarget.value = ''; }} /></label>
+        {club && <button className="btn btn-ghost" onClick={() => { if (confirm('Remove the club boundary from this device? Your pins and journal stay.')) onRemove(); }}>Remove</button>}
+      </div>
+      <details className="club-paste">
+        <summary className="tiny">Or paste GeoJSON</summary>
+        <textarea rows={4} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder='{"type":"Polygon","coordinates":[[…]]}' />
+        <button className="btn small" disabled={!paste.trim()} onClick={() => { onPaste(paste); setPaste(''); }}>Use pasted boundary</button>
+      </details>
+      {error && <p className="small warn">{error}</p>}
+      <p className="tiny muted">Accepts GeoJSON, KML or GPX (a boundary saved as a track). Your backup file includes the boundary, so keep that file private too. Zones can only be built where this app has terrain data: one small area set up for the owner.</p>
+    </section>
+  );
+}
+
 // ---------------- 7-day outlook ----------------
 export interface OutlookDay {
   date: string;
@@ -551,6 +584,9 @@ export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart
     <section className="card inspect">
       <div className="card-head"><h2>{j.label}</h2><button className="btn btn-ghost small" onClick={onClose}>✕</button></div>
       <p className="small coords">{pt[1].toFixed(5)}, {pt[0].toFixed(5)}</p>
+      {j.kind === 'private_club' || j.label.startsWith('Outside your club') ? (
+        <ul className="small"><li>{j.kind === 'private_club' ? <>Land: <b>your club (private)</b> · Statewide deer zone: <b>{j.deerZone}</b></> : <>Land: <b>not your club</b> (a neighbor&apos;s property unless you have permission)</>}</li></ul>
+      ) : (
       <ul className="small">
         <li>Black Warrior WMA (ADCNR 2026-27 boundary): <b>{j.inWma ? 'inside' : 'outside'}</b></li>
         <li>Forest Service surface ownership: <b>{j.fsOwned == null ? 'unknown' : j.fsOwned ? 'USDA Forest Service' : 'Non-FS'}</b></li>
@@ -559,6 +595,7 @@ export function InspectCard({ pt, j, legalSummary, onClose, onAddPin, onSetStart
         <li>Sipsey Wilderness: {j.wilderness ? 'yes' : 'no'}</li>
         <li>Statewide deer zone: <b>{j.deerZone ?? 'uncertain (near C/D line)'}</b>{j.kind === 'black_warrior_wma' ? ' (WMA calendar applies)' : ''}</li>
       </ul>
+      )}
       <p className="small">{legalSummary}</p>
       {j.notes.map((n) => <p key={n} className="tiny muted">{n}</p>)}
       {onCheck && (

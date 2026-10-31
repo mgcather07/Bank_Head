@@ -8,3 +8,8 @@ dev-dist
 research/raw/*.tif
 research/raw/*.pdf
 research/raw/*.geojson
+
+# personal land boundaries stay local, never committed
+private/
+.claude/
+research/raw/tpi-ref.json

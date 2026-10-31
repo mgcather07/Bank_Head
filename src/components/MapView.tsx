@@ -30,10 +30,13 @@ export interface LayerToggles {
 
 const USGS = (svc: string) => `https://basemap.nationalmap.gov/arcgis/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`;
 const BASES: Record<BaseMap, string> = { topo: 'USGSTopo', satellite: 'USGSImageryOnly', hybrid: 'USGSImageryTopo', hillshade: 'USGSShadedReliefOnly' };
-import { STUDY_BBOX } from '../engine/config';
+import { CLUB_BBOX, STUDY_BBOX } from '../engine/config';
+import type { ClubGeometry } from '../engine/club';
 import { pathDistance } from '../engine/roads';
 const [B0, B1, B2, B3] = STUDY_BBOX;
 const SLOPE_BOUNDS: [[number, number], [number, number], [number, number], [number, number]] = [[B0, B3], [B2, B3], [B2, B1], [B0, B1]];
+
+const CLUB_BOUNDS: [[number, number], [number, number], [number, number], [number, number]] = [[CLUB_BBOX[0], CLUB_BBOX[3]], [CLUB_BBOX[2], CLUB_BBOX[3]], [CLUB_BBOX[2], CLUB_BBOX[1]], [CLUB_BBOX[0], CLUB_BBOX[1]]];
 
 const PIN_COLORS: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', saved_candidate: '#f7f2a1' };
 
@@ -68,7 +71,7 @@ export function scentCone(center: [number, number], downwind: number, lengthM = 
 
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-export type ZoneTypeFilter = 'all' | 'saddle' | 'bench' | 'spur' | 'bottom';
+export type ZoneTypeFilter = 'all' | 'saddle' | 'bench' | 'spur' | 'bottom' | 'spot';
 export type LandFilter = 'all' | 'wma' | 'nf';
 export interface SetupMarker { id: string; coord: [number, number]; primary: boolean; label: string }
 
@@ -103,12 +106,15 @@ interface Props {
   typeFilter: ZoneTypeFilter;
   landFilter: LandFilter;
   startPin: [number, number] | null;
+  /** The user's club boundary and roads, only while "My club" is shown. */
+  clubBoundary?: ClubGeometry | null;
+  clubRoads?: FeatureCollection | null;
   onCandidate: (id: string) => void;
   onInspect: (lngLat: [number, number]) => void;
   mapRef: React.MutableRefObject<MLMap | null>;
 }
 
-export function MapView({ data, base, layers, scores, selected, windHour, userLoc, pins, setups, typeFilter, landFilter, startPin, onCandidate, onInspect, mapRef }: Props) {
+export function MapView({ data, base, layers, scores, selected, windHour, userLoc, pins, setups, typeFilter, landFilter, startPin, clubBoundary, clubRoads, onCandidate, onInspect, mapRef }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const ready = useRef(false);
   const pending = useRef<Array<() => void>>([]);
@@ -186,6 +192,11 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
       map.addLayer({ id: 'fsroads', type: 'line', source: 'fsroads', paint: { 'line-color': ['match', ['slice', ['get', 'oper_maint_level'], 0, 1], '1', '#888', '2', '#d9a066', '#f0e6d2'], 'line-width': 1.6 } });
       map.addSource('trails', { type: 'geojson', data: data.trails });
       map.addLayer({ id: 'trails', type: 'line', source: 'trails', paint: { 'line-color': '#e36b5b', 'line-width': 1.4, 'line-dasharray': [2, 1.5] } });
+      map.addSource('club', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'club-fill', type: 'fill', source: 'club', paint: { 'fill-color': '#ffd84d', 'fill-opacity': 0.07 } });
+      map.addLayer({ id: 'club-line', type: 'line', source: 'club', paint: { 'line-color': '#ffd84d', 'line-width': 2.6 } });
+      map.addSource('clubroads', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'clubroads', type: 'line', source: 'clubroads', paint: { 'line-color': ['match', ['get', 'highway'], 'path', '#e36b5b', 'footway', '#e36b5b', 'bridleway', '#e36b5b', 'cycleway', '#e36b5b', '#f0e6d2'], 'line-width': 1.4 } });
       map.addSource('cands', { type: 'geojson', data: empty, promoteId: 'id' });
       map.addLayer({ id: 'cand-fill', type: 'fill', source: 'cands', paint: { 'fill-color': ['case', ['==', ['get', 'score'], -1], '#7a7a7a', ['interpolate', ['linear'], ['get', 'score'], 35, '#b0413e', 55, '#e0a43a', 75, '#5fbf5a']], 'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.8, 14, 0.45] } });
       map.addLayer({ id: 'cand-line', type: 'line', source: 'cands', paint: { 'line-color': '#101510', 'line-width': 0.8 } });
@@ -224,22 +235,53 @@ export function MapView({ data, base, layers, scores, selected, windHour, userLo
     if (!map) return;
     const apply = () => {
       const vis = (ids: string[], on: boolean) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'));
-      vis(['wma-line', 'nf-line', 'zone-divider', 'zoned-line', 'zoned-label'], layers.boundaries);
+      vis(['wma-line', 'nf-line', 'zone-divider', 'zoned-line', 'zoned-label', 'club-fill', 'club-line'], layers.boundaries);
       vis(['nonfs'], layers.ownership);
       vis(['wilderness', 'wilderness-line'], layers.wilderness);
-      vis(['fsroads'], layers.roads);
+      vis(['fsroads', 'clubroads'], layers.roads);
       vis(['trails'], layers.trails);
       vis(['streams'], layers.streams);
       vis(['contours', 'contour-labels'], layers.contours);
-      vis(['slope'], layers.slope);
-      vis(['disturbance', 'fuel-line'], layers.disturbance);
+      vis(['slope', 'slope-club'], layers.slope);
+      vis(['disturbance', 'disturbance-club', 'fuel-line'], layers.disturbance);
       vis(['lidar-hs'], layers.lidar);
       vis(['cand-fill', 'cand-line', 'setups', 'setup-label'], layers.candidates);
       vis(['access', 'access-label'], layers.access);
       vis(['pins'], layers.pins);
     };
     whenReady(apply);
-  }, [layers, data, mapRef]);
+  }, [layers, data, clubBoundary, mapRef]);
+
+  // the user's club: boundary, roads and the club's own slope / disturbance overlays (only while the club is shown)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      (map.getSource('club') as GeoJSONSource | undefined)?.setData(clubBoundary ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: clubBoundary }] } : empty);
+      (map.getSource('clubroads') as GeoJSONSource | undefined)?.setData(clubRoads ?? empty);
+      if (clubBoundary && !map.getSource('slope-club')) {
+        const base = import.meta.env.BASE_URL;
+        map.addSource('slope-club', { type: 'image', url: `${base}data/club/slope.png`, coordinates: CLUB_BOUNDS });
+        map.addLayer({ id: 'slope-club', type: 'raster', source: 'slope-club', paint: { 'raster-opacity': 0.75, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } }, 'club-fill');
+        map.addSource('disturbance-club', { type: 'image', url: `${base}data/club/disturbance.png`, coordinates: CLUB_BOUNDS });
+        map.addLayer({ id: 'disturbance-club', type: 'raster', source: 'disturbance-club', paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } }, 'club-fill');
+      }
+      if (map.getLayer('slope-club')) { map.setLayoutProperty('slope-club', 'visibility', layers.slope ? 'visible' : 'none'); map.setLayoutProperty('disturbance-club', 'visibility', layers.disturbance ? 'visible' : 'none'); }
+    };
+    whenReady(apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubBoundary, clubRoads, data, mapRef]);
+
+  // contours and streams change when the club's are merged in
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !data) return;
+    whenReady(() => {
+      (map.getSource('contours') as GeoJSONSource | undefined)?.setData(data.contours);
+      (map.getSource('streams') as GeoJSONSource | undefined)?.setData(data.streams);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.contours, data?.streams, mapRef]);
 
   // candidate scores
   useEffect(() => {

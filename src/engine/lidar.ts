@@ -12,7 +12,10 @@ export const LIDAR_PIXEL_M = 4;
 const ROAD_MS = 1.3;
 
 export interface LidarLayers {
-  ownership: FeatureCollection<Polygon | MultiPolygon>;
+  /** Bankhead: non-Forest-Service parcels are blocked. Omitted for the private club, where `walkable` is used instead. */
+  ownership?: FeatureCollection<Polygon | MultiPolygon>;
+  /** Private club: only ground inside this boundary (plus mapped roads and paths) may be walked; everything else is a neighbor's land. */
+  walkable?: Polygon | MultiPolygon;
   water?: FeatureCollection<Polygon | MultiPolygon>;
   lines: Array<FeatureCollection<LineString | MultiLineString> | undefined>; // roads + trails (walkable, faster)
 }
@@ -24,9 +27,22 @@ export async function fetchLidarWindow(center: [number, number], radiusM: number
   const bbox: [number, number, number, number] = [center[0] - dLon, center[1] - dLat, center[0] + dLon, center[1] + dLat];
   const w = Math.min(1800, Math.round((2 * radiusM) / pixelM)), h = Math.min(1800, Math.round((2 * radiusM) / pixelM));
   const u = `${SERVICE}?bbox=${bbox.join(',')}&bboxSR=4326&imageSR=4326&size=${w},${h}&format=tiff&compression=LZ77&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation&f=json`;
-  const meta = await (await fetch(u, { signal })).json();
-  if (!meta.href) throw new Error('Lidar elevation request failed');
-  const buf = await (await fetch(meta.href, { signal })).arrayBuffer();
+  // The USGS service is sometimes slow or drops a request under load; retry a couple of times before giving up.
+  let buf: ArrayBuffer | null = null, lastErr: unknown;
+  for (let attempt = 0; attempt < 3 && !buf; attempt++) {
+    try {
+      const meta = await (await fetch(u, { signal })).json();
+      if (!meta.href) throw new Error('Lidar elevation request failed');
+      const res = await fetch(meta.href, { signal });
+      if (!res.ok) throw new Error(`Lidar download failed (${res.status})`);
+      buf = await res.arrayBuffer();
+    } catch (e) {
+      if (signal?.aborted) throw e;
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+    }
+  }
+  if (!buf) throw lastErr instanceof Error ? lastErr : new Error('Lidar elevation request failed');
   const { fromArrayBuffer } = await import('geotiff');
   const img = await (await fromArrayBuffer(buf)).getImage();
   const [r] = (await img.readRasters()) as unknown as [Float32Array];
@@ -46,7 +62,12 @@ export async function lidarRoute(center: [number, number], net: WalkNetwork, lay
     const slope = slopeDeg(grid);
     const blocked = new Uint8Array(w * h), onPath = new Uint8Array(w * h);
     const ringsOf = (g: Polygon | MultiPolygon) => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).map((p) => p.map((r) => r.map(toPx)));
-    for (const f of layers.ownership.features) if ((f.properties as { ownerclassification?: string })?.ownerclassification !== 'USDA FOREST SERVICE') for (const p of ringsOf(f.geometry)) fillRings(p, w, h, blocked, 1);
+    for (const f of layers.ownership?.features ?? []) if ((f.properties as { ownerclassification?: string })?.ownerclassification !== 'USDA FOREST SERVICE') for (const p of ringsOf(f.geometry)) fillRings(p, w, h, blocked, 1);
+    if (layers.walkable) {
+      const ok = new Uint8Array(w * h);
+      for (const p of ringsOf(layers.walkable)) fillRings(p, w, h, ok, 1);
+      for (let i = 0; i < ok.length; i++) blocked[i] = ok[i] ? 0 : 1;
+    }
     for (const f of layers.water?.features ?? []) for (const p of ringsOf(f.geometry)) fillRings(p, w, h, blocked, 1);
     flatWaterMask(grid, Math.round(5000 / (grid.dx * grid.dy)), blocked); // hydro-flattened ponds/lakes (≥ 0.5 ha)
     for (const fc of layers.lines) for (const f of fc?.features ?? []) {

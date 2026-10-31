@@ -1,0 +1,82 @@
+{
+  "algorithmVersion": "terrain-1.2.0",
+  "generated": "2026-10-31T05:08:56.652Z",
+  "bbox": [
+    -86.78,
+    33.73,
+    -86.67,
+    33.81
+  ],
+  "grid": {
+    "width": 396,
+    "height": 288,
+    "cellDeg": 0.0002777777777777778,
+    "approxCellM": [
+      26,
+      31
+    ]
+  },
+  "tpiReference": {
+    "small": {
+      "mean": -0.0003842248120130564,
+      "sd": 5.783828108709066
+    },
+    "large": {
+      "mean": -0.006352586292708144,
+      "sd": 13.124345784321125
+    },
+    "source": "research/raw/dem_1arcsec.tif (Bankhead study area)"
+  },
+  "counts": {
+    "streams": 91
+  },
+  "sources": [
+    {
+      "id": "usgs-3dep-dem",
+      "agency": "USGS National Map",
+      "title": "3DEP Elevation (resampled to 1 arc-second ≈ 26×31 m)",
+      "resolution": "1 arc-second grid (~26 m E-W × 31 m N-S)",
+      "usage": "Public domain",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox=-86.78,33.73,-86.67,33.81&bboxSR=4326&imageSR=4326&size=396,288&format=tiff&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation",
+      "retrieved": "2026-10-31T05:07:44.371Z",
+      "checksum": "ff387fdb535d7428",
+      "quality": "retrieved",
+      "coverage": "bbox -86.78,33.73,-86.67,33.81"
+    },
+    {
+      "id": "landfire-lf2024-evt",
+      "agency": "USGS / USFS LANDFIRE",
+      "title": "LF2024 Existing Vegetation Type (EVT)",
+      "resolution": "30 m native, nearest-neighbour resampled. Not suitable for individual trees.",
+      "usage": "Public domain",
+      "url": "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_EVT_CONUS/ImageServer/exportImage?bbox=-86.78,33.73,-86.67,33.81&bboxSR=4326&imageSR=4326&size=396,288&format=tiff&pixelType=S16&interpolation=RSP_NearestNeighbor",
+      "retrieved": "2026-10-31T05:07:44.918Z",
+      "checksum": "a1c6046914dfe453",
+      "quality": "retrieved",
+      "coverage": "bbox -86.78,33.73,-86.67,33.81"
+    },
+    {
+      "id": "landfire-lf2024-fdist",
+      "agency": "USGS / USFS LANDFIRE",
+      "title": "LF2024 Fuel Disturbance (FDist): disturbance type, severity and age (1 / 2–5 / 6–10 yr)",
+      "resolution": "30 m native, nearest-neighbour resampled",
+      "usage": "Public domain",
+      "url": "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_FDist_CONUS/ImageServer/exportImage?bbox=-86.78,33.73,-86.67,33.81&bboxSR=4326&imageSR=4326&size=396,288&format=tiff&pixelType=S16&interpolation=RSP_NearestNeighbor",
+      "retrieved": "2026-10-31T05:07:45.424Z",
+      "checksum": "fcf1bb6f603e3bf7",
+      "quality": "retrieved",
+      "coverage": "bbox -86.78,33.73,-86.67,33.81"
+    },
+    {
+      "id": "club-osm-roads",
+      "agency": "OpenStreetMap contributors (ODbL)",
+      "title": "Roads and paths in the private-club box",
+      "url": "https://overpass-api.de/api/interpreter",
+      "retrieved": "2026-10-31T05:08:56.652Z",
+      "checksum": "657bdd40a4203bae",
+      "quality": "retrieved",
+      "coverage": "bbox -86.78,33.73,-86.67,33.81",
+      "usage": "ODbL – attribution required"
+    }
+  ]
+}

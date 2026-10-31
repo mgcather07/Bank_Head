@@ -2,6 +2,7 @@
 import type { FeatureCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon } from 'geojson';
 import type { Candidate, CandidateProps } from './engine/types';
 import type { Layers } from './engine/geography';
+import { loadGrid, type TerrainGrid } from './engine/spot';
 
 export interface SourceEntry {
   id: string;
@@ -75,4 +76,17 @@ export async function loadData(): Promise<AppData> {
   ]);
   const candidates: Candidate[] = candidatesFc.features.map((f) => ({ geometry: f.geometry, properties: f.properties }));
   return { wma, nfAdmin, ownership, wilderness, highways, candidates, candidatesFc, accessPoints, checkStations, recSites, fsRoads, trails, streams, contours, registry, fuelTreatments, osmRoads, zoneD, zoneDLines, counties, water };
+}
+
+/** Public terrain, roads, streams and contours for the private-club box. Contains nothing that locates the club inside it. */
+export interface ClubData {
+  grid: TerrainGrid;
+  roads: FeatureCollection<LineString | MultiLineString>;
+  streams: FeatureCollection<LineString>;
+  contours: FeatureCollection<LineString>;
+}
+
+export async function loadClubData(): Promise<ClubData> {
+  const [grid, roads, streams, contours] = await Promise.all([loadGrid('club'), j<ClubData['roads']>('club/roads.geojson'), j<ClubData['streams']>('club/streams.geojson'), j<ClubData['contours']>('club/contours.geojson')]);
+  return { grid, roads, streams, contours };
 }

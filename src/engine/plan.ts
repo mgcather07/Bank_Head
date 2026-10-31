@@ -166,7 +166,7 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
 
   // ---- legal ----
   const legal: string[] = [`${rec.legal.summary}`];
-  if (rec.legal.bag) legal.push(`Bag: ${rec.legal.bag}.`);
+  if (rec.legal.bag) legal.push(`Bag: ${rec.legal.bag.replace(/\.$/, '')}.`);
   if (rec.legal.antlerRestriction) legal.push(rec.legal.antlerRestriction);
   legal.push(`Method: ${weaponLabel(rec.method)}. ${rec.landJurisdiction.includes('WMA') ? 'Check in with the Outdoor Alabama app or a daily permit; report harvest before leaving.' : 'Report harvest in Game Check before moving the deer.'}`);
   if (/youth/i.test(rec.legal.huntName ?? '')) legal.push('Youth hunt: the kid must be under 16, within 30 ft of a licensed supervisor (21+ or parent) who is not hunting, and only the kid shoots. Hunter orange for both.');
