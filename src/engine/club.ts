@@ -7,7 +7,9 @@ import type { Feature, FeatureCollection, LineString, MultiLineString, MultiPoly
 import type { Candidate, UserPin } from './types';
 import { haversine, polygonContains, type LandMeta, type Layers } from './geography';
 import { roadDistance } from './roads';
-import { analyzeSpot, buildWalkNetwork, cellOf, circle, slopeAt, type TerrainGrid, type WalkNetwork } from './spot';
+import { analyzeSpot, buildWalkNetwork, cellOf, slopeAt, type TerrainGrid, type WalkNetwork } from './spot';
+import { ringHectares, terrainSampler, zoneShape, type Sampler, type ShapeOptions } from './shape';
+import { terrainRoutes } from './lidar';
 import { inClubBox } from './config';
 
 export type ClubGeometry = Polygon | MultiPolygon;
@@ -103,7 +105,7 @@ export function buildClubNetwork(roads: Lines, club: ClubGeometry, pins: UserPin
 
 // ---------- zone generation ----------
 
-export interface ClubZoneOptions { meta?: LandMeta; spacingM?: number; minEdgeM?: number; roadClearM?: number; separationM?: number; max?: number; maxSlopeDeg?: number }
+export interface ClubZoneOptions { meta?: LandMeta; roads?: Lines; spacingM?: number; minEdgeM?: number; roadClearM?: number; separationM?: number; max?: number; maxSlopeDeg?: number }
 
 /**
  * Candidate zones for the club: a regular lattice of spots inside the boundary, each scored with the same terrain and
@@ -135,9 +137,25 @@ export function generateClubZones(grid: TerrainGrid, club: ClubGeometry, net: Wa
     if (kept.some((k) => haversine(k.properties.center, c.properties.center) < sep)) continue;
     kept.push(c);
   }
-  return kept.map((c, i) => {
+  const sample = terrainSampler(grid);
+  const zones = kept.map((c, i): Candidate => {
     const p = c.properties;
     const ab = p.type === 'spot' ? 'SP' : p.type.slice(0, 2).toUpperCase();
-    return { geometry: circle(p.center, 70), properties: { ...p, id: `CL-${ab}-${String(i + 1).padStart(3, '0')}`, club: true } };
+    const geometry = clubZoneShape(sample, club, p.center);
+    return { geometry, properties: { ...p, id: `CL-${ab}-${String(i + 1).padStart(3, '0')}`, club: true, areaHa: +ringHectares(geometry).toFixed(1) } };
   });
+  // walk-ins over the terrain (not straight lines) from the start; the app swaps in lidar routes when it has them
+  if (net) {
+    const routes = terrainRoutes(grid, zones.map((z) => ({ id: z.properties.id, center: z.properties.center })), net, { walkable: club, lines: [o.roads] });
+    for (const z of zones) { const r = routes[z.properties.id]; if (r) z.properties.routes = [r, ...z.properties.routes.filter((x) => x.routeKind !== 'terrain')]; }
+  }
+  return zones;
+}
+
+/** Club zone outlines stay inside the property (a little back from the line) and off roads. */
+export const clubShapeOptions = (club: ClubGeometry): ShapeOptions => ({ allowed: (pt) => polygonContains(club, pt) && edgeDistanceM(club, pt) >= 15 && roadDistance(pt, 30) >= 20 });
+
+/** A club zone's outline: follows the ground, stays inside the property and off roads. */
+export function clubZoneShape(sample: Sampler, club: ClubGeometry, center: [number, number]) {
+  return zoneShape(sample, center, clubShapeOptions(club));
 }

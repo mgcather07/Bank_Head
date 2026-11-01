@@ -6,7 +6,7 @@ import type { Polygon } from 'geojson';
 import { buildClubNetwork, edgeDistanceM, generateClubZones, hasTerrainData, polygonAcres, type ClubGeometry } from './club';
 import { parseGrid, type TerrainGrid, type WalkNetwork } from './spot';
 import { buildRoadIndex, setRoadIndex } from './roads';
-import { haversine, lookupClubJurisdiction, type Layers } from './geography';
+import { haversine, lookupClubJurisdiction, polygonContains, type Layers } from './geography';
 import { evaluateCandidate } from './scoring';
 import { evaluateLegal } from './regulations';
 import { CLUB_BBOX } from './config';
@@ -60,7 +60,7 @@ describe('club zones from the public club terrain data', () => {
     setRoadIndex(buildRoadIndex(roads));
     club = testSquare(1400, 300, 100);
     net = buildClubNetwork(roads, club, []);
-    zones = generateClubZones(grid, club, net, layers);
+    zones = generateClubZones(grid, club, net, layers, { roads });
   });
   it('the public grid covers the club box with plausible Jefferson County elevations', () => {
     expect(grid.bbox).toEqual(CLUB_BBOX);
@@ -83,6 +83,24 @@ describe('club zones from the public club terrain data', () => {
     // best first, and kept well apart
     for (let i = 1; i < zones.length; i++) expect(zones[i].properties.terrainScore).toBeLessThanOrEqual(zones[0].properties.terrainScore);
     for (let i = 0; i < zones.length; i++) for (let j = i + 1; j < zones.length; j++) expect(haversine(zones[i].properties.center, zones[j].properties.center)).toBeGreaterThanOrEqual(200);
+  });
+  it('outlines follow the ground (not circles), stay inside the property and walk in over the terrain', () => {
+    let shaped = 0;
+    for (const z of zones) {
+      expect(z.geometry.type).toBe('Polygon');
+      const ring = (z.geometry as Polygon).coordinates[0];
+      for (const pt of ring) expect(polygonContains(club, pt as [number, number])).toBe(true);
+      const r = ring.map((pt) => haversine(z.properties.center, pt as [number, number]));
+      if (Math.max(...r) / Math.min(...r) > 1.4) shaped++;
+      expect(z.properties.areaHa).toBeGreaterThan(0.2);
+      const route = z.properties.routes[0];
+      expect(route.routeKind).toBe('terrain');
+      expect(route.path.length).toBeGreaterThanOrEqual(2);
+      expect(route.walkMeters).toBeGreaterThanOrEqual(route.straightLineMeters - 1);
+      expect(haversine(route.path[route.path.length - 1], z.properties.center)).toBeLessThan(1);
+      expect(route.maxSlopeDeg).toBeLessThan(38);
+    }
+    expect(shaped).toBeGreaterThan(zones.length / 2);
   });
   it('is deterministic', () => {
     const again = generateClubZones(grid, club, net, layers);

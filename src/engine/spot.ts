@@ -3,9 +3,10 @@
 // and routes the walk-in over the FS road / NFS trail network. Results feed the normal scoring engine.
 import type { FeatureCollection, LineString, MultiLineString, Point, Position } from 'geojson';
 import type { Candidate, CandidateProps, RouteOption } from './types';
-import { bearingTo, haversine, lookupClubJurisdiction, lookupJurisdiction, type LandMeta, type Layers } from './geography';
+import { bearingTo, haversine, lookupClubJurisdiction, lookupJurisdiction, polygonContains, type LandMeta, type Layers } from './geography';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { roadDistance } from './roads';
+import { ringHectares, terrainSampler, zoneShape } from './shape';
 
 export interface TerrainGrid {
   bbox: [number, number, number, number];
@@ -375,7 +376,10 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
     deerZone: j.kind === 'black_warrior_wma' ? 'D' : j.deerZone,
     landform,
   };
-  return { geometry: circle(pt, 100), properties: props };
+  // club zones are outlined by the caller; a checked spot gets its own terrain-shaped outline here
+  const geometry = opts.asZone ? circle(pt, 70) : zoneShape(terrainSampler(g), pt, { allowed: (q) => (!opts.club || polygonContains(opts.club, q)) && roadDistance(q, 30) >= 20 });
+  props.areaHa = +ringHectares(geometry).toFixed(1);
+  return { geometry, properties: props };
 }
 
 export function circle(c: [number, number], rM: number) {

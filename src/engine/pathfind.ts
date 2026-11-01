@@ -106,11 +106,13 @@ export interface PathResult { cells: number[]; seconds: number; seedTag: number;
 /** Tobler speed in m/s for a step with signed grade s (rise/run). */
 export const toblerMs = (s: number) => (6 * Math.exp(-3.5 * Math.abs(s + 0.05))) / 3.6;
 
+export interface Search { cost: Float64Array; prev: Int32Array; tag: Int32Array }
+
 /**
  * Multi-source Dijkstra from `seeds` (cells already reached, with a starting cost in seconds — e.g. the walk along
- * the road/trail network to get there) to `goal`. Returns the fastest walking path, or null if the goal is cut off.
+ * the road/trail network to get there) until every cell in `goals` is settled. One search serves many zones.
  */
-export function findPath(g: Grid, slope: Uint8Array, blocked: Uint8Array, onPath: Uint8Array, seeds: Seed[], goal: number, maxSeconds = 4 * 3600): PathResult | null {
+export function search(g: Grid, slope: Uint8Array, blocked: Uint8Array, onPath: Uint8Array, seeds: Seed[], goals: number[], maxSeconds = 4 * 3600): Search {
   const { w, h, dx, dy, elev } = g;
   const n = w * h;
   const cost = new Float64Array(n).fill(Infinity);
@@ -132,22 +134,23 @@ export function findPath(g: Grid, slope: Uint8Array, blocked: Uint8Array, onPath
     hc[k] = lc; hi[k] = li;
     return [i, c] as const;
   };
-  const passable = (i: number) => onPath[i] === 1 || (!blocked[i] && slope[i] < CLIFF_DEG);
+  const isGoal = new Uint8Array(n);
+  let left = 0;
+  for (const gi of goals) if (gi >= 0 && gi < n && !isGoal[gi]) { isGoal[gi] = 1; left++; }
+  const passable = (i: number) => onPath[i] === 1 || isGoal[i] === 1 || (!blocked[i] && slope[i] < CLIFF_DEG); // always allow arriving at a zone itself
   for (const s of seeds) if (s.i >= 0 && s.i < n && s.cost < cost[s.i]) { cost[s.i] = s.cost; tag[s.i] = s.tag; push(s.cost, s.i); }
-  if (!passable(goal)) blocked[goal] = 0; // always allow arriving at the zone itself
   const DIRS: Array<[number, number, number]> = [[1, 0, dx], [-1, 0, dx], [0, 1, dy], [0, -1, dy], [1, 1, Math.hypot(dx, dy)], [-1, 1, Math.hypot(dx, dy)], [1, -1, Math.hypot(dx, dy)], [-1, -1, Math.hypot(dx, dy)]];
-  let found = false;
-  while (hn) {
+  while (hn && left > 0) {
     const [i, c] = pop();
     if (c > cost[i]) continue;
-    if (i === goal) { found = true; break; }
+    if (isGoal[i]) { isGoal[i] = 2; left--; }
     if (c > maxSeconds) break;
     const x = i % w, y = (i - x) / w;
     for (const [ox, oy, d] of DIRS) {
       const xx = x + ox, yy = y + oy;
       if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
       const j = yy * w + xx;
-      if (!passable(j) && j !== goal) continue;
+      if (!passable(j)) continue;
       const grade = (elev[j] - elev[i]) / d;
       if (Math.abs(grade) > 1.2 && !onPath[j]) continue; // > 50° step: not walkable
       let v = toblerMs(grade);
@@ -158,9 +161,15 @@ export function findPath(g: Grid, slope: Uint8Array, blocked: Uint8Array, onPath
       if (nc < cost[j]) { cost[j] = nc; prev[j] = i; tag[j] = tag[i]; push(nc, j); }
     }
   }
-  if (!found) return null;
+  return { cost, prev, tag };
+}
+
+/** The fastest path to `goal` out of a finished search, with its length, climb and steepest ground. */
+export function tracePath(g: Grid, slope: Uint8Array, onPath: Uint8Array, s: Search, goal: number): PathResult | null {
+  if (goal < 0 || !Number.isFinite(s.cost[goal])) return null;
+  const { w, dx, dy, elev } = g;
   const cells: number[] = [];
-  for (let i = goal; i >= 0; i = prev[i]) cells.push(i);
+  for (let i = goal; i >= 0; i = s.prev[i]) cells.push(i);
   cells.reverse();
   let lengthM = 0, onPathM = 0, gain = 0, loss = 0, maxSlope = 0;
   for (let k = 1; k < cells.length; k++) {
@@ -174,7 +183,11 @@ export function findPath(g: Grid, slope: Uint8Array, blocked: Uint8Array, onPath
     // steepest cross-country ground walked (road cuts and the destination cell itself don't count)
     if (slope[b] < 255 && !onPath[b] && b !== goal) maxSlope = Math.max(maxSlope, slope[b]);
   }
-  return { cells, seconds: cost[goal], seedTag: tag[goal], seedCell: cells[0], lengthM, onPathM, offPathM: lengthM - onPathM, gainM: gain, lossM: loss, maxSlopeDeg: maxSlope };
+  return { cells, seconds: s.cost[goal], seedTag: s.tag[goal], seedCell: cells[0], lengthM, onPathM, offPathM: lengthM - onPathM, gainM: gain, lossM: loss, maxSlopeDeg: maxSlope };
+}
+
+export function findPath(g: Grid, slope: Uint8Array, blocked: Uint8Array, onPath: Uint8Array, seeds: Seed[], goal: number, maxSeconds = 4 * 3600): PathResult | null {
+  return tracePath(g, slope, onPath, search(g, slope, blocked, onPath, seeds, [goal], maxSeconds), goal);
 }
 
 /** Douglas–Peucker simplification of [x,y] points. */

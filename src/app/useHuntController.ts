@@ -8,11 +8,13 @@ import type { SavedArea } from '../engine/offline';
 import { cachedTileCount, downloadArea, removeArea, tilesForBase } from '../engine/offline';
 import { getPastDay } from '../engine/climate';
 import { analyzeSpot, buildWalkNetwork, loadGrid, type WalkNetwork } from '../engine/spot';
-import { buildClubNetwork, clubBounds, generateClubZones, hasTerrainData } from '../engine/club';
+import { buildClubNetwork, clubBounds, clubShapeOptions, generateClubZones, hasTerrainData } from '../engine/club';
 import { buildHuntPlan, setupPoint } from '../engine/plan';
 import { buildRoadIndex, setPathIndex, setRoadIndex } from '../engine/roads';
-import { lidarRoute } from '../engine/lidar';
-import type { Candidate, HuntPreferences, HuntRecommendation, RouteOption, Session } from '../engine/types';
+import { lidarZone, lidarZones, terrainRoutes, type ZoneRefinement } from '../engine/lidar';
+import { ringHectares } from '../engine/shape';
+import { clubLidarKey, readLidarCache, writeLidarCache } from '../lib/lidar-cache';
+import type { Candidate, HuntPreferences, HuntRecommendation, Session } from '../engine/types';
 import { addDays, fmtDate, localDate, sessionWindows, sunDay } from '../engine/time';
 import { hoursBetween } from '../engine/weather';
 import { evaluateCandidate, rankCandidates, sessionsFor } from '../engine/scoring';
@@ -61,22 +63,34 @@ export function useHuntController() {
   const land = workspace.land ?? null;
   const landReady = !land || !!clubData;
 
-  const clubNet = useMemo(() => (land && clubData ? buildClubNetwork(clubData.roads, land.geometry, pins.filter((p) => p.kind === 'parking')) : null), [land, clubData, pins]);
+  // pins and club snapshots arrive as new objects; only rebuild when the parking pins or the boundary really change
+  const parkingKey = pins.filter((p) => p.kind === 'parking').map((p) => p.coord.join(',')).join(';');
+  const landKey = land ? `${land.id}:${JSON.stringify(land.geometry).length}:${clubBounds(land.geometry).join(',')}` : '';
+  const clubNet = useMemo(() => (land && clubData ? buildClubNetwork(clubData.roads, land.geometry, pins.filter((p) => p.kind === 'parking')) : null), [landKey, clubData, parkingKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const landZones = useMemo<Candidate[]>(() => {
     if (!land || !clubData || !baseData) return [];
     setRoadIndex(buildRoadIndex(baseData.fsRoads, baseData.highways, baseData.osmRoads, clubData.roads));
     setPathIndex(buildRoadIndex(baseData.fsRoads, baseData.highways, baseData.osmRoads, baseData.trails, clubData.roads));
-    return generateClubZones(clubData.grid, land.geometry, clubNet, baseData, { meta: { name: land.name, deerZone: land.deerZone } });
-  }, [land, clubData, baseData, clubNet]);
+    return generateClubZones(clubData.grid, land.geometry, clubNet, baseData, { meta: { name: land.name, deerZone: land.deerZone }, roads: clubData.roads });
+  }, [landKey, clubData, baseData, clubNet]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lidar walk-ins (and, for your club and checked spots, lidar outlines) replace the terrain-grid versions as they arrive.
+  const [lidar, setLidar] = useState<Record<string, ZoneRefinement | 'loading' | 'error' | 'none'>>(() => readLidarCache('public'));
+  const refine = useCallback((c: Candidate): Candidate => {
+    const r = lidar[c.properties.id];
+    if (!r || typeof r !== 'object' || (!r.route && !r.shape)) return c;
+    const routes = r.route ? [r.route, ...c.properties.routes.filter((x) => x.routeKind !== 'lidar')] : c.properties.routes;
+    return r.shape ? { geometry: r.shape, properties: { ...c.properties, routes, areaHa: +ringHectares(r.shape).toFixed(1) } } : { ...c, properties: { ...c.properties, routes } };
+  }, [lidar]);
 
   const data = useMemo<AppData | null>(() => {
     if (!baseData) return null;
     const contours = clubData ? { ...baseData.contours, features: [...baseData.contours.features, ...clubData.contours.features] } : baseData.contours;
     const streams = clubData ? { ...baseData.streams, features: [...baseData.streams.features, ...clubData.streams.features] } : baseData.streams;
-    const candidates = land ? landZones : filterCandidates(workspace, baseData.candidates);
+    const candidates = (land ? landZones : filterCandidates(workspace, baseData.candidates)).map(refine);
     const feats = candidates.map((c, i) => ({ type: 'Feature' as const, id: i + 1, geometry: c.geometry, properties: c.properties }));
     return { ...baseData, contours, streams, candidates, candidatesFc: { type: 'FeatureCollection', features: feats }, accessPoints: land ? { type: 'FeatureCollection', features: [] } : baseData.accessPoints };
-  }, [baseData, clubData, land, landZones, workspace]);
+  }, [baseData, clubData, land, landZones, workspace, refine]);
 
   // ---- weather / sun ----
   const wxPoint = useMemo(() => workspaceCenter(workspace, prefs.start), [workspace, prefs.start]);
@@ -98,7 +112,6 @@ export function useHuntController() {
   const [spots, setSpots] = useState<Candidate[]>([]);
   const [checking, setChecking] = useState<string | null>(null);
   const [pendingSpot, setPendingSpot] = useState<{ pt: [number, number]; date?: string; session?: Session } | null>(null);
-  const [lidar, setLidar] = useState<Record<string, RouteOption | 'loading' | 'error' | 'none'>>({});
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
   const [dismissed, setDismissed] = useState<string[]>([]);
   const netRef = useRef<WalkNetwork | null>(null);
@@ -144,9 +157,8 @@ export function useHuntController() {
 
   const findCand = useCallback((id: string) => {
     const c = data?.candidates.find((x) => x.properties.id === id) ?? spots.find((x) => x.properties.id === id) ?? null;
-    const lr = lidar[id];
-    return c && lr && typeof lr === 'object' ? { ...c, properties: { ...c.properties, routes: [lr, ...c.properties.routes.filter((r) => r.routeKind !== 'lidar')] } } : c;
-  }, [data, spots, lidar]);
+    return c && c.properties.id.startsWith('SPOT-') ? refine(c) : c;
+  }, [data, spots, refine]);
   const selected = useMemo<HuntRecommendation | null>(() => {
     if (!selectedKey || !data) return null;
     const c = findCand(selectedKey.id);
@@ -241,30 +253,67 @@ export function useHuntController() {
     return netRef.current;
   }, [land, clubNet, data]);
 
+  // Your club: every zone's lidar walk-in and outline from one download and one search, kept on this device.
+  const clubTargetsKey = land ? `${landKey}#${parkingKey}#${landZones.map((z) => z.properties.id + z.properties.center.join()).join('|')}` : '';
+  const [clubLidarFailed, setClubLidarFailed] = useState(false);
   useEffect(() => {
-    const id = selectedKey?.id;
-    if (!id || !data || lidar[id] || !online) return;
-    const c = data.candidates.find((x) => x.properties.id === id) ?? spots.find((x) => x.properties.id === id);
-    if (!c) return;
+    if (!land || !clubData || !baseData || !clubNet || !landZones.length) return;
+    const ids = landZones.map((z) => z.properties.id);
+    const cached = readLidarCache(clubLidarKey(land.id), clubTargetsKey);
+    if (Object.keys(cached).length) { setLidar((m) => ({ ...m, ...cached })); return; }
+    if (!online) return;
     const ctl = new AbortController();
+    setClubLidarFailed(false);
+    setLidar((m) => ({ ...m, ...Object.fromEntries(ids.map((id) => [id, 'loading' as const])) }));
+    lidarZones(landZones.map((z) => ({ id: z.properties.id, center: z.properties.center })), clubNet, { walkable: land.geometry, water: baseData.water, lines: [clubData.roads] }, { signal: ctl.signal, shape: clubShapeOptions(land.geometry) })
+      .then((res) => {
+        setLidar((m) => ({ ...m, ...Object.fromEntries(ids.map((id) => [id, res[id]?.route || res[id]?.shape ? res[id] : 'none'])) }));
+        writeLidarCache(clubLidarKey(land.id), res, clubTargetsKey);
+      })
+      .catch((e) => {
+        if (ctl.signal.aborted) return;
+        console.error('club lidar', e);
+        setClubLidarFailed(true);
+        setLidar((m) => Object.fromEntries(Object.entries(m).filter(([k]) => !ids.includes(k))));
+      });
+    return () => { ctl.abort(); setLidar((m) => Object.fromEntries(Object.entries(m).filter(([k, v]) => !(v === 'loading' && ids.includes(k))))); };
+  }, [clubTargetsKey, online]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Public land and checked spots: the open zone first, then the top picks, one at a time. Requests are never
+  // cancelled by data refreshes (that used to leave the straight-line placeholder on the map).
+  const inflight = useRef<string | null>(null);
+  const lidarQueue = useMemo(() => {
+    const ids = [selectedKey?.id, ...recs.slice(0, 3).map((r) => r.areaId)].filter((x): x is string => !!x);
+    return [...new Set(ids)].filter((id) => !lidar[id] && (!land || clubLidarFailed || id.startsWith('SPOT-'))).join(',');
+  }, [selectedKey?.id, recs, lidar, land, clubLidarFailed]);
+  useEffect(() => {
+    if (!lidarQueue || !data || !online || inflight.current) return;
+    const id = lidarQueue.split(',')[0];
+    const c = data.candidates.find((x) => x.properties.id === id) ?? spots.find((x) => x.properties.id === id);
+    const net = getNet();
+    if (!c || !net) return;
+    const isSpot = id.startsWith('SPOT-');
+    const near = c.properties.routes[0];
+    const radiusM = Math.min(2400, Math.max(1100, (near ? haversine(near.coord, c.properties.center) : 1200) + 350));
+    const layerSet = land && clubData ? { walkable: land.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
+    const shape = isSpot ? (land ? clubShapeOptions(land.geometry) : {}) : false; // public zones keep the build's outlines
+    inflight.current = id;
     setLidar((m) => ({ ...m, [id]: 'loading' }));
-    (async () => {
-      try {
-        const net = getNet();
-        if (!net) { setLidar((m) => ({ ...m, [id]: 'none' })); return; }
-        const near = c.properties.routes[0];
-        const radiusM = Math.min(2400, Math.max(1100, (near ? haversine(near.coord, c.properties.center) : 1200) + 350));
-        const layerSet = land && clubData ? { walkable: land.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
-        const r = await lidarRoute(c.properties.center, net, layerSet, { radiusM, signal: ctl.signal });
+    lidarZone(c.properties.center, net, layerSet, { radiusM, shape })
+      .then((r) => {
+        inflight.current = null;
         setLidar((m) => ({ ...m, [id]: r ?? 'none' }));
-      } catch (e) {
-        if (!ctl.signal.aborted) { console.error('lidar route', e); setLidar((m) => ({ ...m, [id]: 'error' })); }
-      }
-    })();
-    return () => { ctl.abort(); setLidar((m) => (m[id] === 'loading' ? Object.fromEntries(Object.entries(m).filter(([k]) => k !== id)) : m)); };
+        if (r && !land && !isSpot) writeLidarCache('public', { [id]: r });
+      })
+      .catch((e) => { inflight.current = null; console.error('lidar route', e); setLidar((m) => ({ ...m, [id]: 'error' })); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedKey?.id, data, online, land]);
-  const lidarStatus = selectedKey ? (typeof lidar[selectedKey.id] === 'object' ? 'done' : (lidar[selectedKey.id] as string | undefined) ?? (online ? 'loading' : 'offline')) : undefined;
+  }, [lidarQueue, data, online]);
+  const lidarStatus = (() => {
+    if (!selectedKey) return undefined;
+    const v = lidar[selectedKey.id];
+    if (v && typeof v === 'object') return v.route ? 'done' : 'none';
+    return v ?? (online ? 'loading' : 'offline');
+  })();
 
   // ---- map movement ----
   const pad = () => ({ ...insets.current });
@@ -337,6 +386,12 @@ export function useHuntController() {
       await new Promise((r) => setTimeout(r, 0));
       const res = analyzeSpot(grid, data, net, pt, land ? { club: land.geometry, clubMeta: { name: land.name, deerZone: land.deerZone } } : {});
       if ('error' in res) { setChecking(null); setSpotError(res.error); return; }
+      if (net) {
+        // walk in over the terrain right away; the lidar version follows when online
+        const layerSet = land && clubData ? { walkable: land.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
+        const tr = terrainRoutes(grid, [{ id: 'spot', center: res.properties.center }], net, layerSet).spot;
+        if (tr) res.properties.routes = [tr, ...res.properties.routes];
+      }
       setSpots((x) => [...x.slice(-9), res]);
       const date = opts.date && opts.date >= localDate() ? opts.date : prefs.date;
       const ctx = { prefs: { ...prefs, date }, weather, pins, normals };
@@ -346,7 +401,7 @@ export function useHuntController() {
       openRec(best);
     } catch (e) { console.error(e); setChecking('error'); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, land, getNet, prefs, weather, pins, normals, openRec]);
+  }, [data, land, clubData, getNet, prefs, weather, pins, normals, openRec]);
   const [spotError, setSpotError] = useState<string | null>(null);
 
   // deep links: ?zone=BH-… / ?spot=lon,lat (public workspaces only)

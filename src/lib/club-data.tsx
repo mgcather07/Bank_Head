@@ -5,10 +5,11 @@ import { useAccount } from './account';
 import { useSnapshot, useStore } from './data';
 import { clubFromWire, type Club, type ClubRole, type ClubWire, type InboxInvite } from './clubs';
 import * as cloud from './sync/clubCloud';
+import { clearClubLidarCache } from './lidar-cache';
 
 const cacheKey = (uid: string) => `bh.clubs.v1.${uid}`;
 /** Removes this person's cached clubs from the device (on sign-out). */
-export function clearClubCache(uid: string) { try { localStorage.removeItem(cacheKey(uid)); } catch { /* ignore */ } }
+export function clearClubCache(uid: string) { try { localStorage.removeItem(cacheKey(uid)); } catch { /* ignore */ } clearClubLidarCache(); }
 const readCache = (uid: string): Record<string, ClubWire> => { try { return JSON.parse(localStorage.getItem(cacheKey(uid)) ?? '{}') ?? {}; } catch { return {}; } };
 
 export interface ClubsApi {
