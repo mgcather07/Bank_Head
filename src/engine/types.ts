@@ -211,7 +211,7 @@ export interface HuntRecommendation {
 
 export interface UserPin {
   id: string;
-  kind: 'stand' | 'sighting' | 'rub' | 'scrape' | 'trail' | 'bedding' | 'feeding' | 'camera' | 'parking' | 'harvest' | 'saved_candidate';
+  kind: 'stand' | 'sighting' | 'rub' | 'scrape' | 'trail' | 'bedding' | 'feeding' | 'camera' | 'parking' | 'harvest' | 'blood' | 'saved_candidate';
   coord: [number, number];
   note: string;
   created: string;

@@ -145,7 +145,7 @@
               ".validate": "newData.val() === $uid"
             },
             "kind": {
-              ".validate": "newData.isString() && newData.val().matches(/^(stand|sighting|rub|scrape|trail|bedding|feeding|camera|parking|harvest|saved_candidate)$/)"
+              ".validate": "newData.isString() && newData.val().matches(/^(stand|sighting|rub|scrape|trail|bedding|feeding|camera|parking|harvest|blood|saved_candidate)$/)"
             },
             "coord": {
               "0": {

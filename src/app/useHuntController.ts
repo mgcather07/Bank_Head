@@ -1,5 +1,6 @@
 // The hunt controller: everything the screens share. It owns the active workspace, the ranked zones, the open zone,
 // weather, lidar routes and spot checks, so the screens stay presentational.
+import { activeTrail, bloodTrails } from '../engine/blood';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MLMap } from 'maplibre-gl';
 import { loadClubData, loadData, type AppData, type ClubData } from '../data';
@@ -437,6 +438,35 @@ export function useHuntController() {
     );
   }, [prefs, setPrefs, flyTo]);
 
+  // ---- blood trail ----
+  const [bloodStatus, setBloodStatus] = useState('');
+  const [bloodHidden, setBloodHidden] = useState<string | null>(() => { try { return localStorage.getItem('bh.blood.hidden'); } catch { return null; } });
+  const bloodTrail = useMemo(() => activeTrail(bloodTrails(pins, workspace.id)), [pins, workspace.id]);
+  const markBlood = useCallback((coord: [number, number], note = '') => {
+    addPin({ kind: 'blood', coord, note, workspace: workspace.id });
+    setBloodHidden(null);
+    try { localStorage.removeItem('bh.blood.hidden'); } catch { /* private mode */ }
+  }, [addPin, workspace.id]);
+  const markBloodAtGps = useCallback(() => {
+    if (!navigator.geolocation) { setBloodStatus('GPS not available on this device.'); return; }
+    setBloodStatus('Getting your position…');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { const p: [number, number] = [pos.coords.longitude, pos.coords.latitude]; setUserLoc(p); markBlood(p, `GPS ±${Math.round(pos.coords.accuracy)} m`); setBloodStatus(`Marked ±${Math.round(pos.coords.accuracy)} m`); },
+      (err) => setBloodStatus(`GPS error: ${err.message}`),
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+    );
+  }, [markBlood]);
+  const hideBloodTrail = useCallback(() => {
+    if (!bloodTrail) return;
+    setBloodHidden(bloodTrail.id);
+    try { localStorage.setItem('bh.blood.hidden', bloodTrail.id); } catch { /* private mode */ }
+  }, [bloodTrail]);
+  const blood = {
+    trail: bloodTrail && bloodTrail.id !== bloodHidden ? bloodTrail : null,
+    status: bloodStatus, mark: markBlood, markAtGps: markBloodAtGps, hide: hideBloodTrail,
+    undo: () => { if (bloodTrail) removePin(bloodTrail.drops[bloodTrail.drops.length - 1].id); },
+  };
+
   const navigate = (r: HuntRecommendation) => {
     if (!r.route) return;
     const [lon, lat] = r.route.coord;
@@ -484,7 +514,7 @@ export function useHuntController() {
     mapRef, setInsets, flyTo, fitZone, fitWorkspace, openRec, onCandidate, onInspect, clearSelection, pickDay, pickSession, checkSpot, checking, spotError, clearSpotError: () => setSpotError(null),
     inspect, setInspect, jur, jurLegal, pickingStart, setPickingStart, userLoc, gpsStatus, onGps, navigate, online,
     // pins
-    pins, addPin, removePin,
+    pins, addPin, removePin, blood,
     // offline maps
     areas, dlProgress, cachedTiles, saveCurrentArea, removeSavedArea, fetchJournalWeather,
   };

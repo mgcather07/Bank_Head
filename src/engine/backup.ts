@@ -38,7 +38,7 @@ export function pinsToGpx(pins: UserPin[]): string {
 /** Minimal GPX waypoint import (lat/lon/name/type). */
 export function gpxToPins(text: string): Array<Omit<UserPin, 'id' | 'created'>> {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
-  const kinds = new Set(['stand', 'sighting', 'rub', 'scrape', 'trail', 'bedding', 'feeding', 'camera', 'parking', 'harvest', 'saved_candidate']);
+  const kinds = new Set(['stand', 'sighting', 'rub', 'scrape', 'trail', 'bedding', 'feeding', 'camera', 'parking', 'harvest', 'blood', 'saved_candidate']);
   return [...doc.getElementsByTagName('wpt')].map((w) => {
     const type = (w.getElementsByTagName('type')[0]?.textContent ?? '').trim();
     const name = (w.getElementsByTagName('name')[0]?.textContent ?? '').trim();

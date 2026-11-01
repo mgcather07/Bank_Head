@@ -15,6 +15,7 @@ import { useToast } from '../ui/toast';
 import { BookOpen, Calendar, ChevronDown, Lock, MapIcon, TreePine, User, LogIn } from '../ui/icons';
 import { ExploreBody, ExploreHeader, ExploreMini } from '../features/explore/ExplorePanel';
 import { MapChrome } from '../features/explore/MapChrome';
+import { BloodTrailBar } from '../features/explore/BloodTrailBar';
 import { AccountSheet, CompassSheet, FilterSheet, LayersSheet, WorkspaceSheet } from '../features/explore/Sheets';
 import { OutlookScreen } from '../features/outlook/OutlookScreen';
 import { JournalScreen } from '../features/journal/JournalScreen';
@@ -114,7 +115,8 @@ export function AppShell() {
       setups={ctl.setups} typeFilter={ctl.typeFilter} startPin={ctl.prefs.start} clubBoundary={ctl.land?.geometry ?? null} clubRoads={ctl.land ? ctl.clubRoads : null} onCandidate={ctl.onCandidate} onInspect={ctl.onInspect} mapRef={ctl.mapRef} />
   );
   const chrome = (variant: 'mobile' | 'desktop') => (
-    <MapChrome variant={variant} workspace={ctl.workspace} onWorkspace={() => setModal('workspace')} user={account.user} signedIn={signedIn} onAccount={() => setModal('account')} onLayers={() => setModal('layers')} onLocate={ctl.onGps} onCompass={() => setModal('compass')} hint={ctl.pickingStart ? 'Tap the map to set your starting point' : null} />
+    <MapChrome variant={variant} workspace={ctl.workspace} onWorkspace={() => setModal('workspace')} user={account.user} signedIn={signedIn} onAccount={() => setModal('account')} onLayers={() => setModal('layers')} onLocate={ctl.onGps} onCompass={() => setModal('compass')} hint={ctl.pickingStart ? 'Tap the map to set your starting point' : null}
+      overlay={ctl.blood.trail && <BloodTrailBar trail={ctl.blood.trail} status={ctl.blood.status} onMarkGps={ctl.blood.markAtGps} onUndo={ctl.blood.undo} onDone={ctl.blood.hide} onShow={() => ctl.flyTo(ctl.blood.trail!.drops[ctl.blood.trail!.drops.length - 1].coord, 17)} />} />
   );
 
   const screens: Record<Exclude<Tab, 'explore'>, ReactNode> = {

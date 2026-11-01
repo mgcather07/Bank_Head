@@ -223,3 +223,17 @@ button.tile:hover { border-color: var(--line-strong); }
 .stepper.big .icon-btn { width: 44px; height: 44px; }
 .time-field input { padding-right: 64px; }
 .time-field input::-webkit-calendar-picker-indicator { display: none; }
+
+/* ---- blood trail ---- */
+.blood-bar { position: absolute; left: 12px; right: 68px; top: calc(var(--safe-t) + 66px); max-width: 420px; padding: 6px 6px 6px 12px; border-radius: 999px; border: 1px solid var(--glass-line); background: var(--glass); backdrop-filter: blur(14px) saturate(1.4); -webkit-backdrop-filter: blur(14px) saturate(1.4); box-shadow: var(--shadow-2); color: var(--text); }
+.blood-bar:has(.blood-bar-status) { border-radius: 18px; }
+.map-chrome.desktop .blood-bar { top: 14px; left: 50%; right: auto; width: min(420px, calc(100% - 140px)); transform: translateX(-50%); }
+.blood-bar-row { display: flex; align-items: center; gap: 4px; }
+.blood-bar-sum { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; color: inherit; font: inherit; font-size: 14px; text-align: left; }
+.blood-bar-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blood-bar-status { margin: 4px 4px 2px 0; }
+.blood-ico { color: #c4001f; fill: #c4001f; flex: none; }
+.btn-primary.blood-btn { background: #b3001b; border-color: #b3001b; color: #fff; }
+.btn.blood-btn:not(.btn-primary) { color: #b3001b; border-color: color-mix(in srgb, #b3001b 45%, var(--line-strong)); }
+:root[data-theme="dark"] .btn.blood-btn:not(.btn-primary) { color: #ff6b7d; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.blood-btn:not(.btn-primary) { color: #ff6b7d; } }

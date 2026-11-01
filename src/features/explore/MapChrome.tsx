@@ -1,11 +1,12 @@
+import type { ReactNode } from 'react';
 import type { Workspace } from '../../lib/workspaces';
 import type { CloudUser } from '../../lib/sync/store';
 import { Avatar, IconButton } from '../../ui/kit';
 import { ChevronDown, Compass, Layers, LocateFixed, LogIn, Lock, TreePine } from '../../ui/icons';
 
 /** The only things floating on the map: where you are hunting, who you are, and three tools. */
-export function MapChrome({ variant, workspace, onWorkspace, user, signedIn, onAccount, onLayers, onLocate, onCompass, hint }: {
-  variant: 'mobile' | 'desktop'; workspace: Workspace; onWorkspace: () => void; user: CloudUser | null; signedIn: boolean; onAccount: () => void; onLayers: () => void; onLocate: () => void; onCompass: () => void; hint?: string | null;
+export function MapChrome({ variant, workspace, onWorkspace, user, signedIn, onAccount, onLayers, onLocate, onCompass, hint, overlay }: {
+  variant: 'mobile' | 'desktop'; workspace: Workspace; onWorkspace: () => void; user: CloudUser | null; signedIn: boolean; onAccount: () => void; onLayers: () => void; onLocate: () => void; onCompass: () => void; hint?: string | null; overlay?: ReactNode;
 }) {
   return (
     <div className={`map-chrome ${variant}`}>
@@ -22,7 +23,7 @@ export function MapChrome({ variant, workspace, onWorkspace, user, signedIn, onA
         <IconButton label="Locate me" variant="glass" onClick={onLocate}><LocateFixed size={20} /></IconButton>
         <IconButton label="Compass" variant="glass" onClick={onCompass}><Compass size={20} /></IconButton>
       </div>
-      {hint && <div className="map-hint" role="status">{hint}</div>}
+      {hint ? <div className="map-hint" role="status">{hint}</div> : overlay}
     </div>
   );
 }

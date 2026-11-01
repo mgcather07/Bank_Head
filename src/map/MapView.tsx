@@ -12,6 +12,7 @@ import type { ClubGeometry } from '../engine/club';
 import { BANKHEAD_CENTER } from '../engine/time';
 import { CLUB_BBOX, STUDY_BBOX } from '../engine/config';
 import { pathDistance } from '../engine/roads';
+import { bloodTrails } from '../engine/blood';
 import type { WorkspaceKind } from '../lib/workspaces';
 import { LIDAR_MAX_Z, registerLidarProtocol } from './lidarTiles';
 
@@ -34,7 +35,7 @@ const USGS = (svc: string) => `https://basemap.nationalmap.gov/arcgis/rest/servi
 const BASES: Record<BaseMap, string> = { topo: 'USGSTopo', satellite: 'USGSImageryOnly', hybrid: 'USGSImageryTopo', hillshade: 'USGSShadedReliefOnly', lidar: 'USGSShadedReliefOnly' };
 type Quad = [[number, number], [number, number], [number, number], [number, number]];
 const quad = (b: readonly number[]): Quad => [[b[0], b[3]], [b[2], b[3]], [b[2], b[1]], [b[0], b[1]]];
-const PIN_COLORS: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', saved_candidate: '#f7f2a1' };
+const PIN_COLORS: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', blood: '#b3001b', saved_candidate: '#f7f2a1' };
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 function styleFor(base: BaseMap, dark: boolean): StyleSpecification {
@@ -88,6 +89,24 @@ function setupIcon(size = 40) {
     g.strokeStyle = color; g.lineWidth = w;
     g.beginPath(); g.moveTo(pad, pad); g.lineTo(size - pad, size - pad); g.moveTo(size - pad, pad); g.lineTo(pad, size - pad); g.stroke();
   }
+  return g.getImageData(0, 0, size, size);
+}
+
+/** A red blood drop, point down, for blood-trail pins. */
+function dropIcon(size = 40) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d')!;
+  const cx = size / 2, r = size * 0.27, cy = size * 0.6, top = size * 0.08;
+  g.beginPath();
+  g.moveTo(cx, top);
+  g.bezierCurveTo(cx + r * 0.35, top + r * 0.9, cx + r, cy - r * 0.6, cx + r, cy);
+  g.arc(cx, cy, r, 0, Math.PI);
+  g.bezierCurveTo(cx - r, cy - r * 0.6, cx - r * 0.35, top + r * 0.9, cx, top);
+  g.closePath();
+  g.lineWidth = size * 0.08; g.strokeStyle = '#ffffff'; g.lineJoin = 'round'; g.stroke();
+  g.fillStyle = '#b3001b'; g.fill();
+  g.beginPath(); g.arc(cx - r * 0.35, cy - r * 0.15, r * 0.22, 0, Math.PI * 2); g.fillStyle = 'rgba(255,255,255,.45)'; g.fill();
   return g.getImageData(0, 0, size, size);
 }
 
@@ -232,6 +251,7 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
       // selection, scent, route
       map.addSource('selected', { type: 'geojson', data: empty });
       if (!map.hasImage('setup-x')) map.addImage('setup-x', setupIcon(48), { pixelRatio: 2 });
+      if (!map.hasImage('blood-drop')) map.addImage('blood-drop', dropIcon(56), { pixelRatio: 2 });
       map.addLayer({ id: 'selected-fill', type: 'fill', source: 'selected', paint: { 'fill-color': '#ffe9a8', 'fill-opacity': 0.2 } });
       map.addLayer({ id: 'selected-casing', type: 'line', source: 'selected', paint: { 'line-color': '#101510', 'line-width': 7, 'line-opacity': 0.8 } });
       map.addLayer({ id: 'selected-line', type: 'line', source: 'selected', paint: { 'line-color': '#ffe9a8', 'line-width': 3.5 } });
@@ -248,7 +268,10 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
       map.addLayer({ id: 'setups', type: 'symbol', source: 'setups', minzoom: 12.5, layout: { 'icon-image': 'setup-x', 'icon-size': ['case', ['get', 'primary'], 1.15, 0.8], 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'symbol-sort-key': ['case', ['get', 'primary'], 1, 0] } });
       map.addLayer({ id: 'setup-label', type: 'symbol', source: 'setups', minzoom: 13.5, filter: ['get', 'primary'], layout: { 'text-field': 'Set up here', 'text-size': 11, 'text-offset': [0, 1.4], 'text-anchor': 'top', ...text }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#b01010', 'text-halo-width': 1.5 } });
       map.addSource('pins', { type: 'geojson', data: empty });
-      map.addLayer({ id: 'pins', type: 'circle', source: 'pins', paint: { 'circle-radius': 6, 'circle-color': ['coalesce', ['get', 'color'], '#fff'], 'circle-stroke-color': '#000', 'circle-stroke-width': 1.5 } });
+      map.addSource('blood', { type: 'geojson', data: empty });
+      map.addLayer({ id: 'blood-line', type: 'line', source: 'blood', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#b3001b', 'line-width': 2.5, 'line-dasharray': [1.5, 1.5], 'line-opacity': 0.9 } });
+      map.addLayer({ id: 'pins', type: 'circle', source: 'pins', filter: ['!=', ['get', 'kind'], 'blood'], paint: { 'circle-radius': 6, 'circle-color': ['coalesce', ['get', 'color'], '#fff'], 'circle-stroke-color': '#000', 'circle-stroke-width': 1.5 } });
+      map.addLayer({ id: 'blood-pins', type: 'symbol', source: 'pins', filter: ['==', ['get', 'kind'], 'blood'], layout: { 'icon-image': 'blood-drop', 'icon-anchor': 'bottom', 'icon-allow-overlap': true, 'icon-ignore-placement': true, 'text-field': ['to-string', ['get', 'n']], 'text-size': 11, 'text-offset': [0.9, -1.2], 'text-anchor': 'left', 'text-allow-overlap': true, ...text }, paint: { 'text-color': '#ffffff', 'text-halo-color': '#7a0012', 'text-halo-width': 1.6 } });
       map.addSource('me', { type: 'geojson', data: empty });
       map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 14, 'circle-color': '#4da3ff', 'circle-opacity': 0.25 } });
       map.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-radius': 6, 'circle-color': ['match', ['get', 'kind'], 'start', '#ffffff', '#4da3ff'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
@@ -395,7 +418,10 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
       if (userLoc) feats.push({ type: 'Feature', properties: { kind: 'gps' }, geometry: { type: 'Point', coordinates: userLoc } });
       if (startPin && (!userLoc || startPin[0] !== userLoc[0])) feats.push({ type: 'Feature', properties: { kind: 'start' }, geometry: { type: 'Point', coordinates: startPin } });
       (map.getSource('me') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: feats });
-      (map.getSource('pins') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: pins.map((p) => ({ type: 'Feature', properties: { kind: p.kind, color: PIN_COLORS[p.kind] }, geometry: { type: 'Point', coordinates: p.coord } })) });
+      const trails = bloodTrails(pins);
+      const dropNo = new Map(trails.flatMap((tr) => tr.drops.map((d, i) => [d.id, i + 1] as const)));
+      (map.getSource('pins') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: pins.map((p) => ({ type: 'Feature', properties: { kind: p.kind, color: PIN_COLORS[p.kind], n: dropNo.get(p.id) ?? null }, geometry: { type: 'Point', coordinates: p.coord } })) });
+      (map.getSource('blood') as GeoJSONSource | undefined)?.setData({ type: 'FeatureCollection', features: trails.filter((tr) => tr.drops.length > 1).map((tr) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: tr.drops.map((d) => d.coord) } })) });
     });
   }, [userLoc, startPin, pins, mapRef]);
 

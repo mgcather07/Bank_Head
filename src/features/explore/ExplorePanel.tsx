@@ -68,6 +68,7 @@ export function ExploreBody({ ctl, onJournal, onFilters, onNotLoaded }: { ctl: H
 
       {ctl.inspect && ctl.jur && ctl.jurLegal ? (
         <InspectPanel pt={ctl.inspect} j={ctl.jur} legalSummary={ctl.jurLegal.summary} onClose={() => ctl.setInspect(null)} checking={ctl.checking}
+          onBlood={() => { ctl.blood.mark(ctl.inspect!); ctl.setInspect(null); }} onBloodGps={() => { ctl.blood.markAtGps(); ctl.setInspect(null); }}
           onAddPin={(kind) => { ctl.addPin({ kind, coord: ctl.inspect!, note: '', workspace: workspace.id }); ctl.setInspect(null); }}
           onSetStart={() => { ctl.setPrefs({ ...prefs, start: ctl.inspect }); ctl.setInspect(null); }} onCheck={() => void ctl.checkSpot(ctl.inspect!)} />
       ) : selected ? (

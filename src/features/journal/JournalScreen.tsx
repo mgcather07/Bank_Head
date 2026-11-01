@@ -9,8 +9,8 @@ import { BookOpen, Calendar, Cloud, Eye, MapPin, Pencil, Plus, Trash2, Wind } fr
 import type { SyncInfo } from '../../lib/sync/store';
 import { SyncBadge } from '../explore/Sheets';
 
-const PIN_LABEL: Record<string, string> = { stand: 'Stand', sighting: 'Deer sighting', rub: 'Rub', scrape: 'Scrape', trail: 'Deer trail', bedding: 'Bedding', feeding: 'Feeding sign', camera: 'Trail camera', parking: 'Parking', harvest: 'Harvest', saved_candidate: 'Saved zone' };
-const PIN_DOT: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', saved_candidate: '#f7f2a1' };
+const PIN_LABEL: Record<string, string> = { stand: 'Stand', sighting: 'Deer sighting', rub: 'Rub', scrape: 'Scrape', trail: 'Deer trail', bedding: 'Bedding', feeding: 'Feeding sign', camera: 'Trail camera', parking: 'Parking', harvest: 'Harvest', blood: 'Blood', saved_candidate: 'Saved zone' };
+const PIN_DOT: Record<string, string> = { stand: '#f5c542', sighting: '#ff8a3d', rub: '#c46b2b', scrape: '#a0522d', trail: '#d9b38c', bedding: '#9b6bd6', feeding: '#6cc070', camera: '#5ab4e6', parking: '#ffffff', harvest: '#ff4d4d', blood: '#b3001b', saved_candidate: '#f7f2a1' };
 const METHODS: Array<[string, string]> = [['bow', 'Bow'], ['crossbow', 'Crossbow'], ['rifle', 'Rifle'], ['muzzleloader', 'Muzzleloader']];
 
 export function JournalScreen({ entries, onSave, onDelete, pins, onDeletePin, draft, onDraftUsed, onFly, onFetchWeather, workspaceName, sync, signedIn, onSignIn }: {
