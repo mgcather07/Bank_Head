@@ -202,3 +202,24 @@ button.tile:hover { border-color: var(--line-strong); }
 .base-opt[aria-checked='true'] { color: var(--brand-text); }
 .base-opt[aria-checked='true'] .thumb { box-shadow: 0 0 0 2.5px var(--brand), var(--brand-glow); }
 .base-opt .hd { position: absolute; top: 5px; right: 5px; padding: 1px 5px; border-radius: 6px; background: var(--brand-grad); color: var(--brand-contrast); font-size: 9.5px; font-style: normal; font-weight: 800; letter-spacing: 0.04em; }
+
+/* journal form: grouped sections that fit a phone */
+.grid-2 > * { min-width: 0; }
+.journal-form { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
+.form-sec { display: flex; flex-direction: column; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--surface-2); }
+.form-sec-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.form-sec-title svg { color: var(--brand); }
+.form-sec .input, .form-sec .textarea, .form-sec .stepper { background: var(--surface); }
+.journal-form input[type='date'], .journal-form input[type='time'] { min-width: 0; -webkit-appearance: none; appearance: none; text-align: left; display: flex; align-items: center; }
+.journal-form input::-webkit-date-and-time-value { text-align: left; }
+.time-field { position: relative; }
+.time-field .now { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); min-height: 30px; padding: 0 10px; font-size: 12.5px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-row .chip { min-height: 36px; }
+.deer-count { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.deer-count > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+.stepper.big { min-width: 148px; min-height: 52px; }
+.stepper.big .num { font-size: 22px; min-width: 2ch; text-align: center; }
+.stepper.big .icon-btn { width: 44px; height: 44px; }
+.time-field input { padding-right: 64px; }
+.time-field input::-webkit-calendar-picker-indicator { display: none; }

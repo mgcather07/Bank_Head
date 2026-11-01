@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { JournalEntry, PinDoc } from '../../lib/models';
 import { fmtDate, localDate } from '../../engine/time';
 import { uid } from '../../lib/id';
 import { ModalSheet } from '../../ui/Sheet';
 import { Badge } from './Badge';
 import { Button, Empty, Field, Notice, Segmented, Spinner } from '../../ui/kit';
-import { BookOpen, MapPin, Plus, Trash2 } from '../../ui/icons';
+import { BookOpen, Calendar, Cloud, Eye, MapPin, Pencil, Plus, Trash2, Wind } from '../../ui/icons';
 import type { SyncInfo } from '../../lib/sync/store';
 import { SyncBadge } from '../explore/Sheets';
 
@@ -80,37 +80,88 @@ export function JournalScreen({ entries, onSave, onDelete, pins, onDeletePin, dr
   );
 }
 
+const BEHAVIORS = ['Feeding', 'Travelling', 'Chasing', 'Bedded', 'Spooked', 'Calm'];
+const SIGNS = ['Fresh rub', 'Scrape', 'Tracks', 'Droppings', 'Trail', 'Acorns'];
+const PRESSURE: Array<[JournalEntry['pressure'], string]> = [['none', 'None'], ['low', 'Low'], ['moderate', 'Moderate'], ['high', 'High']];
+
+/** Comma-separated tags, toggled by tapping a chip; anything typed by hand is kept. */
+const tagsOf = (s: string) => s.split(',').map((t) => t.trim()).filter(Boolean);
+const hasTag = (s: string, t: string) => tagsOf(s).some((x) => x.toLowerCase() === t.toLowerCase());
+const toggleTag = (s: string, t: string) => (hasTag(s, t) ? tagsOf(s).filter((x) => x.toLowerCase() !== t.toLowerCase()) : [...tagsOf(s), t]).join(', ');
+const nowHM = () => new Date().toTimeString().slice(0, 5);
+
+function Chips({ label, options, value, onChange }: { label: string; options: string[]; value: string; onChange: (v: string) => void }) {
+  return <div className="chip-row" role="group" aria-label={label}>{options.map((o) => <button key={o} type="button" className={`chip ${hasTag(value, o) ? 'on' : ''}`} aria-pressed={hasTag(value, o)} onClick={() => onChange(toggleTag(value, o))}>{o}</button>)}</div>;
+}
+
+function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return <section className="form-sec"><h3 className="form-sec-title">{icon}{title}</h3>{children}</section>;
+}
+
 function JournalEditor({ entry, isNew, onClose, onSave, onDelete, onFetchWeather }: { entry: JournalEntry | null; isNew: boolean; onClose: () => void; onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; onFetchWeather: (date: string, coord: [number, number] | null) => Promise<string | null> }) {
   const [e, setE] = useState<JournalEntry | null>(entry);
   const [busy, setBusy] = useState(false);
   useEffect(() => setE(entry), [entry]);
   if (!entry || !e) return null;
   const set = <K extends keyof JournalEntry>(k: K, v: JournalEntry[K]) => setE((cur) => (cur ? { ...cur, [k]: v } : cur));
+  const bump = (d: number) => setE((cur) => (cur ? { ...cur, deerSeen: Math.max(0, cur.deerSeen + d) } : cur));
+  const time = (k: 'start' | 'end', label: string) => (
+    <Field label={label}>
+      <div className="time-field">
+        <input className="input" type="time" value={e[k]} onChange={(x) => set(k, x.target.value)} aria-label={`${label} time`} />
+        {!e[k] && <button type="button" className="chip now" onClick={() => set(k, nowHM())}>Now</button>}
+      </div>
+    </Field>
+  );
   return (
     <ModalSheet open onClose={onClose} title={isNew ? 'Log a hunt' : 'Edit entry'}
-      footer={<>{!isNew && <Button variant="danger" icon={<Trash2 size={18} />} onClick={() => { if (confirm('Delete this journal entry?')) onDelete(e.id); }}>Delete</Button>}<Button variant="primary" block onClick={() => onSave({ ...e, draft: undefined })}>Save entry</Button></>}>
-      <div className="stack" style={{ paddingBottom: 8 }}>
-        <div className="grid-2">
+      footer={<>{!isNew && <Button variant="danger" icon={<Trash2 size={18} />} onClick={() => { if (confirm('Delete this journal entry?')) onDelete(e.id); }} aria-label="Delete entry" />}<Button variant="primary" block onClick={() => onSave({ ...e, draft: undefined })}>Save entry</Button></>}>
+      <div className="journal-form">
+        <Section icon={<Calendar size={16} />} title="When">
           <Field label="Date"><input className="input" type="date" value={e.date} onChange={(x) => set('date', x.target.value)} /></Field>
-          <Field label="Method"><select className="select" value={e.method} onChange={(x) => set('method', x.target.value)}>{METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
-          <Field label="Start"><input className="input" type="time" value={e.start} onChange={(x) => set('start', x.target.value)} /></Field>
-          <Field label="End"><input className="input" type="time" value={e.end} onChange={(x) => set('end', x.target.value)} /></Field>
-        </div>
-        <Field label="Where"><input className="input" value={e.location} onChange={(x) => set('location', x.target.value)} placeholder="Zone, stand or landmark" /></Field>
-        <Field label="Weather" hint="Fill it from the day's recorded weather.">
-          <div className="row"><input className="input" value={e.weather} onChange={(x) => set('weather', x.target.value)} placeholder="58°F, light east wind" />
-            <Button disabled={busy} onClick={async () => { setBusy(true); try { const w = await onFetchWeather(e.date, e.coord); if (w) set('weather', w); } finally { setBusy(false); } }}>{busy ? <Spinner /> : 'Auto'}</Button></div>
-        </Field>
-        <Field label="Wind you felt"><input className="input" value={e.windObserved} onChange={(x) => set('windObserved', x.target.value)} placeholder="E, swirling at dusk" /></Field>
-        <div className="grid-2">
-          <Field label="Deer seen"><div className="stepper"><button type="button" className="icon-btn" aria-label="Fewer" onClick={() => set('deerSeen', Math.max(0, e.deerSeen - 1))}>−</button><b className="num">{e.deerSeen}</b><button type="button" className="icon-btn" aria-label="More" onClick={() => set('deerSeen', e.deerSeen + 1)}>+</button></div></Field>
-          <Field label="Pressure"><select className="select" value={e.pressure} onChange={(x) => set('pressure', x.target.value as JournalEntry['pressure'])}><option value="none">None</option><option value="low">Low</option><option value="moderate">Moderate</option><option value="high">High</option></select></Field>
-        </div>
-        <Field label="Harvest"><Segmented label="Harvest" block value={e.harvest} onChange={(v) => set('harvest', v)} options={[['none', 'None'], ['buck', 'Buck'], ['doe', 'Doe']]} /></Field>
-        <Field label="Behavior"><input className="input" value={e.behavior} onChange={(x) => set('behavior', x.target.value)} placeholder="Feeding, travelling, bedded" /></Field>
-        <Field label="Sign"><input className="input" value={e.sign} onChange={(x) => set('sign', x.target.value)} placeholder="Fresh rub, scrape line" /></Field>
-        <Field label="Notes"><textarea className="textarea" value={e.notes} onChange={(x) => set('notes', x.target.value)} placeholder="What worked, what didn't" /></Field>
-        {e.predictedScore != null && <p className="t-xs muted">The app rated this zone {e.predictedScore} for the day. Logging outcomes over a season is how those weights get calibrated.</p>}
+          <div className="grid-2">{time('start', 'Start')}{time('end', 'End')}</div>
+          <Field label="Method"><div className="chip-row" role="radiogroup" aria-label="Method">{METHODS.map(([v, l]) => <button key={v} type="button" role="radio" aria-checked={e.method === v} className={`chip ${e.method === v ? 'on' : ''}`} onClick={() => set('method', v)}>{l}</button>)}</div></Field>
+        </Section>
+
+        <Section icon={<MapPin size={16} />} title="Where">
+          <input className="input" value={e.location} onChange={(x) => set('location', x.target.value)} placeholder="Zone, stand or landmark" aria-label="Where" enterKeyHint="next" autoCapitalize="words" />
+        </Section>
+
+        <Section icon={<Wind size={16} />} title="Conditions">
+          <Field label="Weather">
+            <div className="row" style={{ gap: 8 }}>
+              <input className="input" value={e.weather} onChange={(x) => set('weather', x.target.value)} placeholder="58°F, light east wind" enterKeyHint="next" />
+              <Button disabled={busy} icon={busy ? undefined : <Cloud size={16} />} onClick={async () => { setBusy(true); try { const w = await onFetchWeather(e.date, e.coord); if (w) set('weather', w); } finally { setBusy(false); } }}>{busy ? <Spinner /> : 'Fill'}</Button>
+            </div>
+          </Field>
+          <Field label="Wind you felt"><input className="input" value={e.windObserved} onChange={(x) => set('windObserved', x.target.value)} placeholder="E, swirling at dusk" enterKeyHint="next" /></Field>
+        </Section>
+
+        <Section icon={<Eye size={16} />} title="What happened">
+          <div className="deer-count">
+            <div><b>Deer seen</b><span className="t-xs muted">Every deer, bucks and does</span></div>
+            <div className="stepper big">
+              <button type="button" className="icon-btn" aria-label="Fewer deer" onClick={() => bump(-1)}>−</button>
+              <b className="num" aria-live="polite">{e.deerSeen}</b>
+              <button type="button" className="icon-btn" aria-label="More deer" onClick={() => bump(1)}>+</button>
+            </div>
+          </div>
+          <Field label="Harvest"><Segmented label="Harvest" block value={e.harvest} onChange={(v) => set('harvest', v)} options={[['none', 'None'], ['buck', 'Buck'], ['doe', 'Doe']]} /></Field>
+          <Field label="Hunting pressure"><Segmented label="Hunting pressure" block value={e.pressure} onChange={(v) => set('pressure', v)} options={PRESSURE} /></Field>
+          <Field label="Behavior">
+            <Chips label="Behavior" options={BEHAVIORS} value={e.behavior} onChange={(v) => set('behavior', v)} />
+            <input className="input" value={e.behavior} onChange={(x) => set('behavior', x.target.value)} placeholder="Or type your own" aria-label="Behavior" />
+          </Field>
+          <Field label="Sign">
+            <Chips label="Sign" options={SIGNS} value={e.sign} onChange={(v) => set('sign', v)} />
+            <input className="input" value={e.sign} onChange={(x) => set('sign', x.target.value)} placeholder="Or type your own" aria-label="Sign" />
+          </Field>
+        </Section>
+
+        <Section icon={<Pencil size={16} />} title="Notes">
+          <textarea className="textarea" value={e.notes} onChange={(x) => set('notes', x.target.value)} placeholder="What worked, what didn't" aria-label="Notes" />
+          {e.predictedScore != null && <p className="t-xs muted">The app rated this zone {e.predictedScore} for the day. Logging outcomes over a season is how those weights get calibrated.</p>}
+        </Section>
       </div>
     </ModalSheet>
   );
