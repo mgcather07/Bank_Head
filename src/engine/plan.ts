@@ -7,6 +7,8 @@ import { compass, downwindBearing, exposure, angleDiff } from './wind';
 import { fmtTime, sunDay, sessionWindows } from './time';
 import { weaponLabel } from './regulations';
 import { roadDistance } from './roads';
+import { rutPhase } from './rut';
+import type { SunDay } from './time';
 
 export interface PlanStep { key: string; title: string; lines: string[]; tone?: 'good' | 'warn' | 'bad' }
 export interface HuntPlan { verdict: { label: string; tone: 'good' | 'warn' | 'bad'; why: string }; steps: PlanStep[] }
@@ -73,6 +75,55 @@ export function walkMinutes(onNetworkM: number, offTrailM: number, gainM: number
   return Math.round(onNetworkM / 67 + offTrailM / 32 + gainM / 10);
 }
 
+// Stand timing. Hunter guidance converges on: mornings, be settled 30–60 min before sunrise — most experienced hunters
+// aim for ~an hour before shooting light so the woods calm down after the walk in; evenings, be in 1–2 h before sunset,
+// up to 3 h in the rut, and sit until dark. Walking in the dark is slower and you need time at the tree to climb, hang
+// gear, cool off and go quiet — so the leave-the-truck time budgets for all of it.
+export const DARK_WALK_FACTOR = 1.3; // headlamp pace, picking your way quietly
+export const GEAR_UP_MIN = 10; // at the truck: dress, check gear, close doors quietly
+export const SETTLE_MIN = 15; // at the stand: climb or set up, haul gear, cool off
+
+export interface StandTiming {
+  /** In the stand, quiet and ready. */
+  settledBy: number;
+  /** Minutes before legal light (morning) or sunset (evening) that settledBy falls. */
+  quietMin: number;
+  walkMin: number | null;
+  leaveTruckBy: number | null;
+  arriveTruckBy: number | null;
+  /** Evening: the dark walk out after legal light ends. */
+  walkOutMin: number | null;
+  why: string;
+}
+
+export function standTiming(session: 'morning' | 'evening', sun: SunDay, date: string, deerZone: 'C' | 'D' | null | undefined, walkMin: number | null, offTrailM = 0): StandTiming {
+  const M = 60000;
+  const rut = rutPhase(date, deerZone ?? 'D').phase;
+  const longWalk = walkMin != null && (walkMin >= 25 || offTrailM >= 400);
+  let settledBy: number, quietMin: number, walk: number | null, why: string;
+  if (session === 'morning') {
+    // 30 min before legal light ≈ an hour before sunrise; a long or cross-country walk bumps more, so give it longer.
+    quietMin = longWalk ? 45 : 30;
+    settledBy = sun.legalStart - quietMin * M;
+    walk = walkMin == null ? null : Math.round(walkMin * DARK_WALK_FACTOR);
+    why = longWalk ? 'a long walk in the dark disturbs more, so the woods need longer to settle' : 'deer moving back to bed need time to forget your walk in';
+  } else {
+    quietMin = rut === 'rut' ? 180 : rut === 'pre_rut' ? 150 : 120;
+    settledBy = sun.sunset - quietMin * M;
+    walk = walkMin;
+    why = rut === 'rut' ? 'rutting bucks move in daylight well before dark' : rut === 'pre_rut' ? 'buck daylight movement is picking up ahead of the rut' : 'get in before deer start moving from bedding toward food';
+  }
+  const leaveTruckBy = walk == null ? null : settledBy - (walk + SETTLE_MIN) * M;
+  return {
+    settledBy, quietMin, walkMin: walk, leaveTruckBy,
+    arriveTruckBy: leaveTruckBy == null ? null : leaveTruckBy - GEAR_UP_MIN * M,
+    walkOutMin: session === 'evening' && walkMin != null ? Math.round(walkMin * DARK_WALK_FACTOR) : null,
+    why,
+  };
+}
+
+const fmtDur = (min: number) => (min >= 60 ? `${Math.floor(min / 60)} h${min % 60 ? ` ${min % 60} min` : ''}` : `${min} min`);
+
 const t = (ms: number) => fmtTime(ms);
 
 const plan_kid = (rec: HuntRecommendation) => rec.candidate.id.length > 0 && rec.components.some((c) => c.key === 'access' && c.positives.some((t) => /kid/i.test(t)));
@@ -102,15 +153,17 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   const when: string[] = [];
   const peak = timeline?.peaks.find((pk) => (rec.session === 'morning' ? pk.start < sun.solarNoon : rec.session === 'evening' ? pk.start >= sun.solarNoon : true)) ?? timeline?.peaks[0];
   const walkMin = rec.route ? rec.route.walkMinutes ?? walkMinutes(rec.route.onNetworkMeters, rec.route.offTrailMeters, rec.route.elevationGainMeters ?? 0) : null;
-  if (rec.session === 'morning') {
-    const settled = sun.legalStart - 20 * 60000;
-    when.push(`Be in your setup by ${t(settled)} — 20 minutes before legal light (${t(sun.legalStart)}).`);
-    if (walkMin != null) when.push(`Leave the truck by ${t(settled - (walkMin + 10) * 60000)} (≈${walkMin} min walk + 10 min to set up).`);
-    when.push(`Stay until at least ${t(Math.min(win.end, sun.sunrise + 3 * 3600000))}.`);
-  } else if (rec.session === 'evening') {
-    const settle = Math.max(win.start, sun.sunset - 3 * 3600000);
-    when.push(`Be settled by ${t(settle)}; hunt until legal light ends at ${t(sun.legalEnd)}.`);
-    if (walkMin != null) when.push(`Leave the truck by ${t(settle - (walkMin + 10) * 60000)} (≈${walkMin} min walk). Plan the walk out in the dark — mark it as you go in.`);
+  if (rec.session === 'morning' || rec.session === 'evening') {
+    const st = standTiming(rec.session, sun, rec.huntDate, p.deerZone, walkMin, rec.route?.offTrailMeters ?? 0);
+    if (rec.session === 'morning') {
+      when.push(`Be in your stand and quiet by ${t(st.settledBy)} — ${st.quietMin} min before legal light (${t(sun.legalStart)}), about ${fmtDur(Math.round((sun.sunrise - st.settledBy) / 60000))} before sunrise. ${st.why[0].toUpperCase()}${st.why.slice(1)}.`);
+      if (st.leaveTruckBy != null) when.push(`Get to the truck by ${t(st.arriveTruckBy!)} and start walking by ${t(st.leaveTruckBy)}: ≈${st.walkMin} min walk in the dark (slower than daylight) + ${SETTLE_MIN} min to climb, hang gear and cool off.`);
+      when.push(`Stay until at least ${t(Math.min(win.end, sun.sunrise + 3 * 3600000))} — mid-morning deer heading back to bed are often the best chance.`);
+    } else {
+      when.push(`Be in your stand and quiet by ${t(st.settledBy)} — ${fmtDur(st.quietMin)} before sunset (${t(sun.sunset)}), because ${st.why}.`);
+      if (st.leaveTruckBy != null) when.push(`Start walking by ${t(st.leaveTruckBy)}: ≈${st.walkMin} min walk + ${SETTLE_MIN} min to climb, hang gear and cool off. Walk slow — sweating in carries scent.`);
+      when.push(`Hunt until legal light ends at ${t(sun.legalEnd)}, then wait for any deer in front of you to move off before climbing down.${st.walkOutMin != null ? ` The walk out is in the dark — about ${st.walkOutMin} min; mark it as you go in.` : ''}`);
+    }
   } else {
     when.push(`Midday sit: ${t(win.start)}–${t(win.end)}. Worth it mainly during the rut.`);
   }

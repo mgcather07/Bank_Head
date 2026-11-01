@@ -14,7 +14,7 @@ import { tilesFor, lon2x, lat2y } from './offline';
 import { mergeById, parseBackup, pinsToGpx } from './backup';
 import { normalFor, type Normals } from './climate';
 import { analyzeSpot, buildWalkNetwork, parseGrid, routeToSpot, type TerrainGrid, type WalkNetwork } from './spot';
-import { buildHuntPlan, huntableWinds, walkMinutes, setupPoint } from './plan';
+import { buildHuntPlan, huntableWinds, walkMinutes, setupPoint, standTiming } from './plan';
 import { bearingTo, haversine } from './geography';
 import zlib from 'node:zlib';
 import * as turf from '@turf/turf';
@@ -673,5 +673,29 @@ describe('lidar tiles', () => {
     const [w, s, e, n] = u.match(/bbox=([^&]+)/)![1].split(',').map(Number);
     expect(e - w).toBeCloseTo(611.5, 0);
     expect(n - s).toBeCloseTo(611.5, 0);
+  });
+});
+
+describe('stand timing', () => {
+  const sun = sunDay('2026-11-01', -87.3, 34.34);
+  const M = 60000;
+  it('morning: quiet 30 min before legal light (≈1 h before sunrise), longer after a long walk, dark walk is slower', () => {
+    const short = standTiming('morning', sun, '2026-11-01', 'D', 12);
+    expect(short.settledBy).toBe(sun.legalStart - 30 * M);
+    expect((sun.sunrise - short.settledBy) / M).toBe(60);
+    expect(short.walkMin).toBe(16); // 12 × 1.3
+    expect(short.leaveTruckBy).toBe(short.settledBy - (16 + 15) * M);
+    expect(short.arriveTruckBy).toBe(short.leaveTruckBy! - 10 * M);
+    expect(standTiming('morning', sun, '2026-11-01', 'D', 30).quietMin).toBe(45);
+    expect(standTiming('morning', sun, '2026-11-01', 'D', 10, 600).quietMin).toBe(45);
+  });
+  it('evening: 2 h before sunset, 2½ h pre-rut, 3 h in the rut; dark walk out', () => {
+    expect(standTiming('evening', sun, '2026-10-10', 'D', 20).quietMin).toBe(120);
+    expect(standTiming('evening', sun, '2026-11-01', 'D', 20).quietMin).toBe(150);
+    const rut = standTiming('evening', sun, '2026-11-26', 'D', 20);
+    expect(rut.settledBy).toBe(sun.sunset - 180 * M);
+    expect(rut.leaveTruckBy).toBe(rut.settledBy - 35 * M);
+    expect(rut.walkOutMin).toBe(26);
+    expect(standTiming('evening', sun, '2026-11-26', 'C', 20).quietMin).toBe(120); // Zone C is still early season
   });
 });
