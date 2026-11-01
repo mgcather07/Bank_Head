@@ -3,9 +3,8 @@ import type { Candidate, HuntPreferences, LegalEvaluation } from '../engine/type
 import type { LandDoc } from './models';
 import type { Club } from './clubs';
 import { clubCenter } from '../engine/club';
-import { evaluateLegal } from '../engine/regulations';
-import { BANKHEAD_CENTER } from '../engine/time';
-import { inStudyArea } from '../engine/config';
+import { evaluateLegal, WMA_CALENDARS } from '../engine/regulations';
+import { REGIONS, inBox, type RegionId, type WmaId } from '../engine/regions';
 
 export type WorkspaceKind = 'wma' | 'nf' | 'land';
 export interface Workspace {
@@ -18,10 +17,19 @@ export interface Workspace {
   land?: LandDoc;
   /** Set for a shared club (members, invitations and this account's role). */
   club?: Club;
+  /** Public data pack this workspace uses (default Bankhead; private lands use Bankhead's shared layers). */
+  region?: RegionId;
 }
 
-export const WMA: Workspace = { id: 'wma', kind: 'wma', name: 'Black Warrior WMA', short: 'WMA', blurb: 'Public · AREA permit · Zones A and B', private: false };
-export const NF: Workspace = { id: 'nf', kind: 'nf', name: 'National Forest', short: 'Forest', blurb: 'Public · statewide seasons · Zones C and D', private: false };
+export const WMA: Workspace = { id: 'wma', kind: 'wma', name: 'Black Warrior WMA', short: 'WMA', blurb: 'Public · Bankhead NF · Zones A and B', private: false };
+export const NF: Workspace = { id: 'nf', kind: 'nf', name: 'Bankhead National Forest', short: 'Forest', blurb: 'Public · outside the WMA · statewide seasons', private: false };
+
+/** The WMAs on the Talladega National Forest, each with its own calendar. */
+export const TALLADEGA_WMAS: Workspace[] = (['choccolocco', 'hollins', 'oakmulgee'] as WmaId[]).map((id) => {
+  const cal = WMA_CALENDARS[id];
+  return { id: `wma:${id}`, kind: 'wma', name: cal.name, short: cal.name.replace(' WMA', ''), blurb: `Public · Talladega NF · ${cal.zoned ? 'Zones A and B' : 'one zone'}`, private: false, region: id };
+});
+export const regionOf = (ws: Workspace): RegionId => ws.region ?? 'bankhead';
 
 export const landWorkspace = (l: LandDoc): Workspace => ({ id: `land:${l.id}`, kind: 'land', name: l.name, short: l.name.length > 18 ? `${l.name.slice(0, 16)}…` : l.name, blurb: `Private · ${l.acres ? `${Math.round(l.acres)} acres · ` : ''}Deer Zone ${l.deerZone}`, private: true, land: l });
 
@@ -31,7 +39,7 @@ export const clubWorkspace = (c: Club): Workspace => {
 };
 
 /** Public areas, then clubs, then personal land (a personal copy of a land that is now a shared club is left out). */
-export const workspacesFor = (lands: LandDoc[], clubs: Club[] = []): Workspace[] => [WMA, NF, ...clubs.map(clubWorkspace), ...lands.filter((l) => !clubs.some((c) => c.id === l.id || c.land.name.trim().toLowerCase() === l.name.trim().toLowerCase())).map(landWorkspace)];
+export const workspacesFor = (lands: LandDoc[], clubs: Club[] = []): Workspace[] => [WMA, NF, ...TALLADEGA_WMAS, ...clubs.map(clubWorkspace), ...lands.filter((l) => !clubs.some((c) => c.id === l.id || c.land.name.trim().toLowerCase() === l.name.trim().toLowerCase())).map(landWorkspace)];
 
 export function resolveWorkspace(id: string | undefined, lands: LandDoc[], clubs: Club[] = []): Workspace {
   const all = workspacesFor(lands, clubs);
@@ -43,11 +51,13 @@ export function resolveWorkspace(id: string | undefined, lands: LandDoc[], clubs
 /** Where weather and sunrise are computed for this workspace. */
 export function workspaceCenter(ws: Workspace, start: HuntPreferences['start']): [number, number] {
   if (ws.land) return clubCenter(ws.land.geometry);
-  return inStudyArea(start) ? start! : BANKHEAD_CENTER;
+  const r = REGIONS[regionOf(ws)];
+  return inBox(r.bbox, start) ? start! : r.center;
 }
 
 /** The zones this workspace shows (private lands generate their own). */
 export function filterCandidates(ws: Workspace, all: Candidate[]): Candidate[] {
+  if (ws.region && ws.region !== 'bankhead') return all.filter((c) => c.properties.jurisdiction === 'state_wma');
   if (ws.kind === 'wma') return all.filter((c) => c.properties.jurisdiction === 'black_warrior_wma');
   if (ws.kind === 'nf') return all.filter((c) => c.properties.jurisdiction === 'nf_outside_wma');
   return all;
@@ -56,6 +66,10 @@ export function filterCandidates(ws: Workspace, all: Candidate[]): Candidate[] {
 /** The rules that apply anywhere in the workspace on a date, used for banners and the outlook. */
 export function legalProbes(ws: Workspace, date: string, prefs: Pick<HuntPreferences, 'weapon' | 'target' | 'youthHunter'>): LegalEvaluation[] {
   const base = { date, weapon: prefs.weapon, target: prefs.target, youthHunter: prefs.youthHunter };
+  if (ws.region && ws.region !== 'bankhead') {
+    const wmaId = ws.region as WmaId;
+    return (WMA_CALENDARS[wmaId].zoned ? (['A', 'B'] as const) : (['A'] as const)).map((zone) => evaluateLegal({ ...base, jurisdiction: 'state_wma', wmaId, zone }));
+  }
   if (ws.kind === 'wma') return [evaluateLegal({ ...base, jurisdiction: 'black_warrior_wma', zone: 'A' }), evaluateLegal({ ...base, jurisdiction: 'black_warrior_wma', zone: 'B' })];
   if (ws.kind === 'nf') return [evaluateLegal({ ...base, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'D' }), evaluateLegal({ ...base, jurisdiction: 'nf_outside_wma', zone: null, deerZone: 'C' })];
   return [evaluateLegal({ ...base, jurisdiction: 'private_club', zone: null, deerZone: ws.land?.deerZone ?? 'C' })];
@@ -63,6 +77,7 @@ export function legalProbes(ws: Workspace, date: string, prefs: Pick<HuntPrefere
 
 /** Dates (inclusive) of the youth gun hunt for this workspace, for the one-tap "taking a kid" prompt. */
 export function youthWindow(ws: Workspace): [string, string] | null {
+  if (ws.region && ws.region !== 'bankhead') { const y = WMA_CALENDARS[ws.region as WmaId].periods.find((x) => x.kind === 'youth_gun'); return y ? [y.start, y.end] : null; }
   if (ws.kind === 'wma') return ['2026-10-31', '2026-11-01'];
   if (ws.kind === 'nf') return ['2026-10-30', '2026-11-02'];
   return ws.land?.deerZone === 'C' ? ['2026-11-13', '2026-11-16'] : null;

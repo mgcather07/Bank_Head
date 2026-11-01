@@ -85,8 +85,12 @@ export interface LegalQuery {
   date: string;
   weapon: Weapon;
   target: Target;
-  jurisdiction: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown' | 'private_club';
+  jurisdiction: 'black_warrior_wma' | 'state_wma' | 'nf_outside_wma' | 'private_or_unknown' | 'private_club';
   zone: Zone | null;
+  /** For 'state_wma': which Talladega WMA calendar. */
+  wmaId?: WmaKey;
+  /** Off-WMA Forest Service land where the statewide deer zone isn't modelled (Talladega NF). */
+  statewideUnmodeled?: boolean;
   youthHunter?: boolean;
   /** Statewide deer zone (only used off the WMA). null = near the C/D line or outside modeled counties. */
   deerZone?: DeerZone | null;
@@ -176,6 +180,8 @@ export function evaluateLegal(q: LegalQuery): LegalEvaluation {
     return result('verified_prohibited', 'Public hunting access is not established at this location (private inholding or non-public land). No recommendation is generated here.');
   }
   if (q.jurisdiction === 'private_club') return evaluatePrivateClub(q);
+  if (q.jurisdiction === 'state_wma') return evaluateWma(q);
+  if (q.jurisdiction === 'nf_outside_wma' && q.statewideUnmodeled) return result('requires_verification', 'National Forest land outside the WMA: statewide public-land deer seasons apply here, but this app only has WMA calendars for this area. Check the statewide season page for your deer zone.', { ruleSource: { id: STATEWIDE_SOURCE.id, title: STATEWIDE_SOURCE.title, url: STATEWIDE_SOURCE.url, version: STATEWIDE_SOURCE.version } });
   if (q.jurisdiction === 'nf_outside_wma') return evaluateStatewide(q);
   if (q.zone) return evalZone(q, q.zone);
   // Zone unknown (near the AL 33 divider): only allowed if both zones agree.
@@ -315,4 +321,153 @@ function evaluateStatewide(q: LegalQuery): LegalEvaluation {
   if (c.status === d.status && c.status !== 'verified_allowed') return { ...d, summary: `${d.summary.replace(/ in Deer Zone D/, '')} (same in Zones C and D)` };
   if (c.status === 'verified_allowed' && d.status === 'verified_allowed' && c.huntName?.split(' (')[0] === d.huntName?.split(' (')[0]) return { ...d, summary: `${d.summary.replace(/ in Deer Zone D/, '')} (same in Zones C and D)`, bag: 'Zone C: one unantlered + one antlered buck per day; Zone D: up to two unantlered + one antlered buck per day.' };
   return result('requires_verification', 'Regulations require verification — this spot is near the Deer Zone C/D line (or outside the counties modeled) and the seasons differ on this date. Check the zone map.', { exceptions: [`Zone C: ${c.summary}`, `Zone D: ${d.summary}`], ruleSource: { id: STATEWIDE_SOURCE.id, title: STATEWIDE_SOURCE.title, url: STATEWIDE_SOURCE.url, version: STATEWIDE_SOURCE.version } });
+}
+
+// ======================= Talladega National Forest WMAs =======================
+// Transcribed 2026-11-01 from the official 2026-27 WMA map & AREA permits (ADCNR WFF, "Hunting Regulations
+// September 2026 – August 2027"). Printed dates carry no year: Oct–Dec are 2026, Jan–Feb are 2027.
+export type WmaKey = 'choccolocco' | 'hollins' | 'oakmulgee';
+
+export interface WmaCalendar {
+  id: WmaKey;
+  name: string;
+  source: { id: string; title: string; url: string; version: string };
+  /** Zone A/B split; false = one set of dates for the whole WMA. */
+  zoned: boolean;
+  zoneNote?: string;
+  periods: HuntPeriod[];
+  /** Mandatory check-station data-collection days (9 a.m.–7 p.m.). */
+  checkDays: Array<[string, string]>;
+  antlerRule: string;
+  checkStations: string;
+  notes: string[];
+}
+
+const WMA_DIR = 'https://www.outdooralabama.com/sites/default/files/PDF%20documents/WMA%20Mamps/2026-2027/';
+const ONE_DEER = 'One deer a day: one unantlered deer or one antlered buck';
+const ONE_BUCK = 'One antlered buck a day';
+const p = (name: string, kind: HuntKind, start: string, end: string, zones: Zone[], bag: string): HuntPeriod => ({ name, kind, start, end, zones, bag, antlerRestrictionZones: kind === 'youth_gun' ? [] : zones });
+const A: Zone[] = ['A'], B: Zone[] = ['B'];
+
+export const WMA_CALENDARS: Record<WmaKey, WmaCalendar> = {
+  choccolocco: {
+    id: 'choccolocco', name: 'Choccolocco WMA', zoned: true,
+    source: { id: 'adcnr-choccolocco-wma-2026-27', title: '2026-27 Choccolocco WMA map & AREA permit (ADCNR WFF)', url: `${WMA_DIR}2026_27_D2-Choccolocco%20WMA%20ADA_0.pdf`, version: '2026-27 (transcribed 2026-11-01)' },
+    zoneNote: 'Zone A is the north and east of the WMA; Zone B the south-west and the Mt. Longleaf NWR tract. The line is drawn only on the permit map — the app traces it from that map.',
+    periods: [
+      p('Archery', 'archery', '2026-10-01', '2027-01-15', BOTH, ONE_DEER),
+      p('Archery (bucks only)', 'archery_buck', '2027-01-16', '2027-01-27', BOTH, ONE_BUCK),
+      p('Youth gun deer hunt', 'youth_gun', '2026-10-31', '2026-11-01', BOTH, `${ONE_DEER} (no antler restrictions)`),
+      p('Primitive weapons', 'primitive', '2026-11-02', '2026-11-06', BOTH, ONE_DEER),
+      p('Zone A gun (either sex)', 'gun_either_sex', '2026-11-21', '2026-11-22', A, ONE_DEER),
+      p('Zone A gun (bucks)', 'gun_buck', '2026-11-07', '2026-11-08', A, ONE_BUCK),
+      p('Zone A gun (bucks)', 'gun_buck', '2026-12-03', '2026-12-06', A, ONE_BUCK),
+      p('Zone A gun (bucks)', 'gun_buck', '2026-12-17', '2026-12-20', A, ONE_BUCK),
+      p('Zone B gun (either sex)', 'gun_either_sex', '2026-11-27', '2026-11-28', B, ONE_DEER),
+      p('Zone B gun (bucks)', 'gun_buck', '2026-11-12', '2026-11-15', B, ONE_BUCK),
+      p('Zone B gun (bucks)', 'gun_buck', '2026-12-10', '2026-12-13', B, ONE_BUCK),
+      p('Zone B gun (bucks)', 'gun_buck', '2026-12-24', '2026-12-27', B, ONE_BUCK),
+    ],
+    checkDays: [['2026-11-07', '2026-11-07'], ['2026-11-13', '2026-11-14'], ['2026-11-21', '2026-11-21'], ['2026-11-27', '2026-11-28'], ['2026-12-04', '2026-12-05'], ['2026-12-11', '2026-12-12'], ['2026-12-18', '2026-12-19']],
+    antlerRule: 'Antlered bucks must have at least four (4) antler points, each 1 inch or longer, on at least one main beam (all hunts except youth).',
+    checkStations: 'Zone A: FS Rd 500 at FS Rd 553. Zone B: FS Rd 522 at AL Hwy 9.',
+    notes: ['Part of the Mt. Longleaf NWR tract (south-west end) is closed to gun deer hunting — see the permit map.', 'Big Oak PDHA on the east side has its own rules — check with the area biologist.'],
+  },
+  hollins: {
+    id: 'hollins', name: 'Hollins WMA', zoned: true,
+    source: { id: 'adcnr-hollins-wma-2026-27', title: '2026-27 Hollins WMA map & AREA permit (ADCNR WFF)', url: `${WMA_DIR}2026_27_D2-Hollins%20WMA%20ADA.pdf`, version: '2026-27 (transcribed 2026-11-01)' },
+    zoneNote: 'Zone A lies north of AL 148, Zone B south of it (east to Bull Gap), per the permit map.',
+    periods: [
+      p('Archery', 'archery', '2026-10-15', '2027-02-10', BOTH, ONE_DEER),
+      p('Youth gun deer hunt', 'youth_gun', '2026-11-14', '2026-11-15', BOTH, `${ONE_DEER} (no antler restrictions)`),
+      p('Primitive weapons', 'primitive', '2026-11-16', '2026-11-20', BOTH, ONE_DEER),
+      p('Primitive weapons', 'primitive', '2026-12-24', '2026-12-28', BOTH, ONE_DEER),
+      p('Gun (either sex)', 'gun_either_sex', '2026-11-21', '2026-11-22', BOTH, ONE_DEER),
+      p('Gun (either sex)', 'gun_either_sex', '2026-11-28', '2026-11-29', BOTH, ONE_DEER),
+      p('Zone A gun (bucks)', 'gun_buck', '2026-12-17', '2026-12-20', A, ONE_BUCK),
+      p('Zone A gun (bucks)', 'gun_buck', '2027-01-07', '2027-01-10', A, ONE_BUCK),
+      p('Zone A gun (bucks)', 'gun_buck', '2027-01-21', '2027-01-24', A, ONE_BUCK),
+      p('Zone B gun (bucks)', 'gun_buck', '2026-12-03', '2026-12-06', B, ONE_BUCK),
+      p('Zone B gun (bucks)', 'gun_buck', '2026-12-31', '2027-01-03', B, ONE_BUCK),
+      p('Zone B gun (bucks)', 'gun_buck', '2027-01-14', '2027-01-17', B, ONE_BUCK),
+      p('Zone B gun (bucks)', 'gun_buck', '2027-01-28', '2027-01-31', B, ONE_BUCK),
+    ],
+    checkDays: [['2026-11-21', '2026-11-22'], ['2026-11-28', '2026-11-28'], ['2026-12-05', '2026-12-06'], ['2026-12-19', '2026-12-20'], ['2026-12-26', '2026-12-27'], ['2027-01-02', '2027-01-03'], ['2027-01-09', '2027-01-09'], ['2027-01-16', '2027-01-16'], ['2027-01-23', '2027-01-24'], ['2027-01-30', '2027-01-31']],
+    antlerRule: 'Antlered bucks must have at least three (3) antler points, each 1 inch or longer, on at least one main beam (all hunts except youth).',
+    checkStations: 'Zone A: Forest Roads 616 and 607. Zone B: Clay Co. Rd. 4 in Hollins.',
+    notes: ['Private inholdings are scattered through the WMA (hatched red on the permit map).'],
+  },
+  oakmulgee: {
+    id: 'oakmulgee', name: 'Oakmulgee WMA', zoned: false,
+    source: { id: 'adcnr-oakmulgee-wma-2026-27', title: '2026-27 Oakmulgee WMA map & AREA permit (ADCNR WFF)', url: `${WMA_DIR}2026_27D3-Oakmulgee%20WMA%20ADA.pdf`, version: '2026-27 (transcribed 2026-11-01)' },
+    periods: [
+      p('Archery', 'archery', '2026-10-15', '2027-02-10', BOTH, ONE_DEER),
+      p('Youth gun deer hunt', 'youth_gun', '2026-11-14', '2026-11-15', BOTH, `${ONE_DEER} (no antler restrictions)`),
+      p('Primitive weapons', 'primitive', '2026-11-16', '2026-11-20', BOTH, ONE_DEER),
+      p('Primitive weapons', 'primitive', '2026-12-07', '2026-12-13', BOTH, ONE_DEER),
+      ...(['2026-11-21:2026-11-22', '2026-12-19:2026-12-20', '2027-01-14:2027-01-17'].map((r) => p('Gun (either sex)', 'gun_either_sex', r.slice(0, 10), r.slice(11), BOTH, 'Two deer a day: one unantlered deer and one antlered buck'))),
+      ...(['2026-11-26:2026-11-29', '2026-12-23:2026-12-29', '2027-01-01:2027-01-06'].map((r) => p('Gun (bucks)', 'gun_buck', r.slice(0, 10), r.slice(11), BOTH, ONE_BUCK))),
+    ],
+    checkDays: [['2026-11-21', '2026-11-22'], ['2026-12-19', '2026-12-20'], ['2027-01-15', '2027-01-16']],
+    antlerRule: 'Antlered bucks must have at least three (3) antler points, each 1 inch or longer, on at least one main beam (all hunts except youth).',
+    checkStations: 'Check station off AL Hwy 50 (see the permit map).',
+    notes: ['Safety zones around the target range (FS 701/706B) and the camping area by AL Hwy 25 and FS 716 — no hunting.'],
+  },
+};
+
+export const isWmaCheckDay = (cal: WmaCalendar, date: string) => cal.checkDays.some(([a, b]) => within(date, a, b));
+
+/** Gun, primitive or youth deer hunt on a Talladega WMA (pressure + orange). Zone null = any zone. */
+export function isWmaGunDay(wmaId: WmaKey, date: string, zone: Zone | null): boolean {
+  return WMA_CALENDARS[wmaId].periods.some((q) => q.kind !== 'archery' && q.kind !== 'archery_buck' && within(date, q.start, q.end) && (zone == null || q.zones.includes(zone)));
+}
+
+function evalWmaZone(cal: WmaCalendar, q: LegalQuery, zone: Zone): LegalEvaluation {
+  const { date, weapon, target } = q;
+  const ruleSource = cal.source;
+  const where = cal.zoned ? ` in Zone ${zone}` : '';
+  const active = cal.periods.filter((x) => within(date, x.start, x.end) && x.zones.includes(zone));
+  const youth = active.find((x) => x.kind === 'youth_gun');
+  const gunToday = active.find((x) => x.kind === 'gun_buck' || x.kind === 'gun_either_sex');
+  const primitive = active.find((x) => x.kind === 'primitive');
+  const archery = active.find((x) => x.kind === 'archery' || x.kind === 'archery_buck');
+  const requirements = [...BASE_REQUIREMENTS.map((r) => r.replace('No permanent tree stands', 'Blaze orange or pink required (see permit). No permanent tree stands'))];
+  const exceptions = [...cal.notes];
+  if (isWmaCheckDay(cal, date)) requirements.push(`Mandatory check-station day: harvested deer must be brought to the check station (9 a.m.–7 p.m.). ${cal.checkStations}`);
+  if (youth) {
+    exceptions.push(`Youth gun deer hunt: no other hunting that day ("No hunting on days of youth gun deer hunt"). Youth must be under 16 and within 30 ft of a licensed supervisor (21+ or parent).`);
+    if (!q.youthHunter) return result('verified_prohibited', `Youth gun deer hunt day on ${cal.name} — only youth hunters (<16) with a qualified supervisor may hunt deer. Archery is closed.`, { huntName: youth.name, requirements, exceptions, ruleSource });
+    return result('verified_allowed', `Youth gun deer hunt on ${cal.name}${where}.`, { huntName: youth.name, bag: youth.bag, antlerRestriction: 'No antler restrictions on youth hunt days.', requirements, exceptions, ruleSource });
+  }
+  let allowed: HuntPeriod | undefined;
+  if (isArchery(weapon)) allowed = archery;
+  else if (weapon === 'muzzleloader') allowed = primitive ?? gunToday;
+  else if (weapon === 'rifle') allowed = gunToday;
+  if (weapon === 'crossbow') exceptions.push('Crossbows are legal archery equipment in Alabama — confirm equipment rules at OutdoorAlabama.com/WMARules.');
+  if (!allowed) {
+    const msg = active.length
+      ? `${weaponLabel(weapon)} is not a legal method on ${date}${where} on ${cal.name}. Open: ${active.map((x) => x.name).join(', ')}.`
+      : `No deer season is open on ${cal.name}${where} on ${date}.`;
+    return result('verified_prohibited', msg, { requirements, exceptions, ruleSource });
+  }
+  let bag = allowed.bag, huntName = allowed.name;
+  if (isArchery(weapon) && gunToday) {
+    bag = gunToday.bag;
+    huntName = `${allowed.name} during ${gunToday.name}`;
+    exceptions.push('Archery hunters must follow check-station requirements and gun-hunt bag and antler rules on gun deer hunt days.');
+  }
+  if (gunToday || primitive) requirements.push('Gun or primitive-weapons deer hunt day: blaze orange or pink required.');
+  const buckOnly = /antlered buck/.test(bag) && !/unantlered/.test(bag);
+  if (target === 'doe' && buckOnly) return result('verified_prohibited', `${huntName}: antlered bucks only on ${date} — does may not be taken.`, { huntName, bag, antlerRestriction: cal.antlerRule, requirements, exceptions, ruleSource });
+  return result('verified_allowed', `${huntName} open on ${cal.name}${where} for ${weaponLabel(weapon).toLowerCase()}.`, { huntName, bag, antlerRestriction: cal.antlerRule, requirements, exceptions, ruleSource });
+}
+
+function evaluateWma(q: LegalQuery): LegalEvaluation {
+  const cal = q.wmaId ? WMA_CALENDARS[q.wmaId] : null;
+  if (!cal) return result('requires_verification', 'Regulations require verification — this WMA\'s calendar is not loaded.');
+  if (!cal.zoned) return evalWmaZone(cal, q, 'A');
+  if (q.zone) return evalWmaZone(cal, q, q.zone);
+  const a = evalWmaZone(cal, q, 'A'), b = evalWmaZone(cal, q, 'B');
+  if (a.status === b.status && a.bag === b.bag) return { ...a, summary: `${a.summary.replace(' in Zone A', '')} (same rule in Zones A and B)`, exceptions: [...a.exceptions, 'Zone could not be confirmed here (near the A/B line); the rules are the same in both zones on this date.'] };
+  return result('requires_verification', `Regulations require verification — this spot is near ${cal.name}'s Zone A/B line and the zones have different hunts on this date. Check the permit map.`, { exceptions: [`Zone A: ${a.summary}`, `Zone B: ${b.summary}`], ruleSource: cal.source });
 }

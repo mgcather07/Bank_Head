@@ -1,6 +1,7 @@
 // SpotAnalyzer — "check this spot": evaluates any map point in the browser with the same terrain/habitat
 // logic the offline build uses for candidate zones, from a compact half-resolution grid (~52×62 m cells),
 // and routes the walk-in over the FS road / NFS trail network. Results feed the normal scoring engine.
+import { REGIONS, type RegionId } from './regions';
 import type { FeatureCollection, LineString, MultiLineString, Point, Position } from 'geojson';
 import type { Candidate, CandidateProps, RouteOption } from './types';
 import { bearingTo, haversine, lookupClubJurisdiction, lookupJurisdiction, polygonContains, type LandMeta, type Layers } from './geography';
@@ -28,10 +29,10 @@ export function parseGrid(meta: { bbox: [number, number, number, number]; width:
   return { ...meta, elev, slope, aspect, tpiL, tpiS, distStream, mask, hab };
 }
 
-export type GridArea = 'bankhead' | 'club';
+export type GridArea = RegionId | 'club';
 const gridPromises = new Map<GridArea, Promise<TerrainGrid>>();
 export function loadGrid(area: GridArea = 'bankhead', base = import.meta.env?.BASE_URL ?? '/'): Promise<TerrainGrid> {
-  const dir = area === 'club' ? 'data/club/' : 'data/';
+  const dir = area === 'club' ? 'data/club/' : `data/${REGIONS[area].dir}`;
   if (!gridPromises.has(area)) gridPromises.set(area, (async () => {
     const meta = await (await fetch(`${base}${dir}terrain-grid.json`)).json();
     const res = await fetch(`${base}${dir}terrain-grid.bin.gz`);
@@ -266,7 +267,7 @@ export interface SpotOptions {
 
 export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | null, pt: [number, number], opts: SpotOptions = {}): Candidate | { error: string } {
   const c = cellOf(g, pt);
-  if (!c) return { error: 'This spot is outside the area with terrain data (Bankhead National Forest, or your club\'s area).' };
+  if (!c) return { error: 'This spot is outside the terrain data for this hunting area. Switch to the area it\'s in, or pick a spot closer in.' };
   // nearest qualifying feature within 150 m sets the feature type (else a generic spot)
   let feat: (typeof FEATURES)[number] | null = null, featD = Infinity;
   for (const f of FEATURES) {
@@ -373,6 +374,7 @@ export function analyzeSpot(g: TerrainGrid, layers: Layers, net: WalkNetwork | n
     areaHa: 3.1,
     routes: route ? [route] : [],
     jurisdiction: j.kind,
+    ...(j.wmaId ? { wmaId: j.wmaId } : {}),
     deerZone: j.kind === 'black_warrior_wma' ? 'D' : j.deerZone,
     landform,
   };

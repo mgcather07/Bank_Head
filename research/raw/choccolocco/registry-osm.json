@@ -1,0 +1,17 @@
+[
+  {
+    "id": "osm-highways",
+    "agency": "OpenStreetMap contributors (ODbL)",
+    "title": "State and US highway centerlines",
+    "url": "https://overpass-api.de/api/interpreter",
+    "query": "[out:json][timeout:60];way[\"highway\"][\"ref\"~\"^(AL|SR|US) ?[0-9]+$\"](33.61,-85.83,33.87,-85.45);out geom;",
+    "coverage": "bbox -85.83,33.61,-85.45,33.87",
+    "retrieved": "2026-11-01T22:25:42.629Z",
+    "resolution": "Vector; community-mapped centerlines",
+    "usage": "ODbL – attribution required",
+    "quality": "retrieved",
+    "featureCount": 398,
+    "checksum": "d72c7bfb3df65fad",
+    "file": "data/choccolocco/highways.geojson"
+  }
+]

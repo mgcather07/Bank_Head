@@ -1,0 +1,17 @@
+[
+  {
+    "id": "osm-roads",
+    "agency": "OpenStreetMap contributors (ODbL)",
+    "title": "All motor roads and tracks (used to keep zones and setups off roads)",
+    "url": "https://overpass-api.de/api/interpreter",
+    "query": "[out:json][timeout:120];way[\"highway\"~\"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track|road|living_street)$\"](33.61,-85.83,33.87,-85.45);out geom;",
+    "coverage": "bbox -85.83,33.61,-85.45,33.87",
+    "retrieved": "2026-11-01T22:34:53.948Z",
+    "resolution": "Vector; community-mapped centerlines",
+    "usage": "ODbL – attribution required",
+    "quality": "retrieved",
+    "featureCount": 6438,
+    "checksum": "53daed136403203d",
+    "file": "data/choccolocco/roads-osm.geojson"
+  }
+]

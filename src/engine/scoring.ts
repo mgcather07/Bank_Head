@@ -1,7 +1,8 @@
 // HuntScoringEngine + RecommendationService + ConfidenceEvaluator.
 // Deterministic and versioned. Weights are product hypotheses (see docs/MODEL.md), not calibrated probabilities.
 import type { Candidate, Confidence, HuntPreferences, HuntRecommendation, RouteOption, ScoreComponent, Session, UserPin, WeatherBundle } from './types';
-import { evaluateLegal, isGunPressureDay, isStatewideGunDay } from './regulations';
+import { evaluateLegal, isGunPressureDay, isStatewideGunDay, isWmaGunDay, WMA_CALENDARS } from './regulations';
+import { REGIONS } from './regions';
 import { assessWind, compass } from './wind';
 import { rutPhase } from './rut';
 import { isWeekend, localDate, sessionWindows, sunDay, fmtTime, type SunDay } from './time';
@@ -37,6 +38,7 @@ function chooseRoute(c: Candidate, prefs: HuntPreferences): RouteOption | null {
 /** Pressure proxy: WMA gun-hunt days, or any statewide gun/muzzleloader day on National Forest land. */
 function gunPressure(p: Candidate['properties'], date: string) {
   if (p.jurisdiction === 'private_club') return false; // a private club is not subject to public-land crowding
+  if (p.jurisdiction === 'state_wma' && p.wmaId) return isWmaGunDay(p.wmaId, date, p.zone ?? p.provisionalZone);
   return p.jurisdiction === 'nf_outside_wma' ? isStatewideGunDay(date, p.deerZone ?? null) : isGunPressureDay(date, p.zone ?? p.provisionalZone);
 }
 
@@ -117,7 +119,7 @@ function accessComponent(c: Candidate, prefs: HuntPreferences, route: RouteOptio
 
 function timeComponent(c: Candidate, session: Session, date: string, prefs: HuntPreferences, sun: SunDay): ScoreComponent {
   const p = c.properties;
-  const rut = rutPhase(date, p.jurisdiction === 'nf_outside_wma' || p.jurisdiction === 'private_club' ? p.deerZone ?? null : 'D');
+  const rut = rutPhase(date, p.jurisdiction === 'state_wma' && p.wmaId ? REGIONS[p.wmaId].rutZone : p.jurisdiction === 'nf_outside_wma' || p.jurisdiction === 'private_club' ? p.deerZone ?? null : 'D');
   const pos: string[] = [], neg: string[] = [];
   let v = 0.55;
   // feature-session fit (hypotheses): morning → travel toward bedding cover; evening → transition toward food/water
@@ -145,7 +147,8 @@ function timeComponent(c: Candidate, session: Session, date: string, prefs: Hunt
     pos.push(`${rut.label}: ${rut.note}`);
   }
   if (gunPressure(p, date) && session === 'morning') { v += 0.05; pos.push('Gun-hunt day: other hunters moving at first light can push deer.'); }
-  neg.push((p.jurisdiction === 'nf_outside_wma' || p.jurisdiction === 'private_club') && p.deerZone === 'C' ? 'Zone C rut timing estimated from ADCNR regional guidance (low confidence).' : `Rut timing from secondary source (low confidence) — verify against ADCNR rut map.`);
+  if (p.jurisdiction === 'state_wma') neg.push('Rut timing for this area estimated from the later central/east Alabama pattern (late Dec–Jan; low confidence) — check ADCNR\'s rut map.');
+  else neg.push((p.jurisdiction === 'nf_outside_wma' || p.jurisdiction === 'private_club') && p.deerZone === 'C' ? 'Zone C rut timing estimated from ADCNR regional guidance (low confidence).' : `Rut timing from secondary source (low confidence) — verify against ADCNR rut map.`);
   void sun;
   return { key: 'time', label: 'Time of day & rut', weight: WEIGHTS.time, value: clamp(v), positives: pos, negatives: neg };
 }
@@ -203,7 +206,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   const date = prefs.date;
   const sun = sunDay(date, p.center[0], p.center[1]);
   const win = sessionWindows(sun)[session];
-  const legal = evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: p.jurisdiction ?? 'black_warrior_wma', zone: p.zone, youthHunter: prefs.youthHunter, deerZone: p.deerZone ?? null });
+  const legal = evaluateLegal({ date, weapon: prefs.weapon, target: prefs.target, jurisdiction: p.jurisdiction ?? 'black_warrior_wma', zone: p.zone, youthHunter: prefs.youthHunter, deerZone: p.deerZone ?? null, wmaId: p.wmaId });
   const route = chooseRoute(c, prefs);
   const hours = hoursBetween(ctx.weather, win.start, win.end);
   const wind = assessWind({ session, hours, sun, aspectDeg: p.aspectDeg, aspectStrength: p.aspectStrength, beddingBearing: p.beddingCoverBearing, foodBearing: p.foodWaterBearing, approachBearing: route?.approachBearing ?? null });
@@ -219,7 +222,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   if (route && route.walkMeters > prefs.maxWalkMeters) warnings.push('Walk exceeds your maximum walking distance.');
   if (legal.status !== 'verified_allowed') warnings.push(legal.summary);
   if (p.type === 'spot' && p.distRoadM < 100) warnings.push(`Road ${p.distRoadM} m away — you can't hunt from or across a public road; set up well off it.`);
-  if (p.wilderness) warnings.push('Sipsey Wilderness — no motorized/mechanized equipment (incl. game carts); pack-in/pack-out.');
+  if (p.wilderness) warnings.push(`${p.wmaId ? 'Wilderness' : 'Sipsey Wilderness'} — no motorized/mechanized equipment (incl. game carts); pack-in/pack-out.`);
   if (prefs.withKid && route && (route.walkMinutes ?? 0) > 15) warnings.push('Long walk for a kid — pick a closer spot.');
   if (prefs.stand === 'climber' || prefs.stand === 'hang_on' || prefs.stand === 'saddle') warnings.push('Tree suitability cannot be verified remotely — inspect trees on site; full-body harness and tether required (WMA rule).');
   if (sun && Date.now() > win.end && date === localDate()) warnings.push('This session has already ended today.');
@@ -236,7 +239,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
   if (wind.thermal.uncertainty === 'high') { conf -= 0.1; cr.push('High thermal uncertainty.'); }
   if (comps[5].value <= 0.4) { conf -= 0.15; cr.push('No field observations; terrain/habitat potential only.'); }
   if (route?.kind === 'roadside') { conf -= 0.05; cr.push('Access point not verified as legal parking.'); }
-  if (p.zone == null) { conf -= 0.1; cr.push('Zone uncertain (near AL 33).'); }
+  if (p.zone == null && (p.jurisdiction === 'black_warrior_wma' || (p.wmaId && WMA_CALENDARS[p.wmaId].zoned))) { conf -= 0.1; cr.push(p.wmaId ? 'Zone uncertain (near the A/B line).' : 'Zone uncertain (near AL 33).'); }
   cr.push('Rut timing low-confidence; weights not yet field-calibrated.');
   let confidence: Confidence = conf >= 0.75 ? 'high' : conf >= 0.5 ? 'moderate' : conf >= 0.3 ? 'low' : 'insufficient';
   if (legal.status === 'requires_verification' && (confidence === 'high' || confidence === 'moderate')) confidence = 'low';
@@ -255,7 +258,7 @@ export function evaluateCandidate(c: Candidate, session: Session, ctx: ScoreCont
     areaId: p.id,
     geometry: c.geometry,
     center: p.center,
-    landJurisdiction: p.jurisdiction && p.jurisdiction !== 'black_warrior_wma' ? (p.jurisdiction === 'nf_outside_wma' ? `Bankhead National Forest · Deer Zone ${p.deerZone ?? 'C/D (near line)'}` : p.jurisdiction === 'private_club' ? p.landLabel ?? CLUB_LABEL : 'Private / non-public land') : `Black Warrior WMA${p.zone ? ` Zone ${p.zone}` : ''}${p.wilderness ? ' · Sipsey Wilderness' : ''}`,
+    landJurisdiction: p.jurisdiction === 'state_wma' && p.wmaId ? `${REGIONS[p.wmaId].wmaName}${p.zone ? ` Zone ${p.zone}` : ''} · ${REGIONS[p.wmaId].forest}${p.wilderness ? ' · Wilderness' : ''}` : p.jurisdiction && p.jurisdiction !== 'black_warrior_wma' ? (p.jurisdiction === 'nf_outside_wma' ? `Bankhead National Forest · Deer Zone ${p.deerZone ?? 'C/D (near line)'}` : p.jurisdiction === 'private_club' ? p.landLabel ?? CLUB_LABEL : 'Private / non-public land') : `Black Warrior WMA${p.zone ? ` Zone ${p.zone}` : ''}${p.wilderness ? ' · Sipsey Wilderness' : ''}`,
     zoneId: p.zone ?? undefined,
     huntDate: date,
     session,

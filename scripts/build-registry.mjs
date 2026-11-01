@@ -1,14 +1,19 @@
-// Merges per-script source registries into public/data/sources.json (the app's Sources view).
+// Merges per-script source registries into <data folder>/sources.json (REGION=<id>, default bankhead) (the app's Sources view).
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const RAW = path.join(ROOT, 'research', 'raw');
+import { RAW, OUT, REGION_ID } from './config.mjs';
+const PERMITS = {
+  choccolocco: { title: 'Choccolocco WMA', url: 'https://www.outdooralabama.com/sites/default/files/PDF%20documents/WMA%20Mamps/2026-2027/2026_27_D2-Choccolocco%20WMA%20ADA_0.pdf' },
+  hollins: { title: 'Hollins WMA', url: 'https://www.outdooralabama.com/sites/default/files/PDF%20documents/WMA%20Mamps/2026-2027/2026_27_D2-Hollins%20WMA%20ADA.pdf' },
+  oakmulgee: { title: 'Oakmulgee WMA', url: 'https://www.outdooralabama.com/sites/default/files/PDF%20documents/WMA%20Mamps/2026-2027/2026_27D3-Oakmulgee%20WMA%20ADA.pdf' },
+};
 const read = async (f) => JSON.parse(await fs.readFile(f, 'utf8'));
 const boundaries = await read(path.join(RAW, 'registry-boundaries.json'));
-const osm = [...(await read(path.join(RAW, 'registry-osm.json'))), ...(await read(path.join(RAW, 'registry-osm-roads.json'))), ...(await read(path.join(RAW, 'registry-deer-zones.json')))];
-const meta = await read(path.join(ROOT, 'public/data/terrain-meta.json'));
-const pdfStat = await fs.stat(path.join(RAW, '2026_27_Black_Warrior_WMA_permit.pdf'));
+const osm = [...(await read(path.join(RAW, 'registry-osm.json'))), ...(await read(path.join(RAW, 'registry-osm-roads.json'))), ...(await read(path.join(RAW, 'registry-deer-zones.json')).catch(() => []))];
+const meta = await read(path.join(OUT, 'terrain-meta.json'));
+const pdfStat = await fs.stat(path.join(RAW, REGION_ID === 'bankhead' ? '2026_27_Black_Warrior_WMA_permit.pdf' : 'permit-2026-27.pdf'));
 
 const manual = [
   { id: 'adcnr-bw-wma-2026-27', agency: 'Alabama DCNR – WFF', title: '2026-27 Black Warrior WMA map & AREA permit (season dates, bag limits, Zone A/B map, rules)', url: 'https://www.outdooralabama.com/sites/default/files/PDF%20documents/WMA%20Mamps/2026-2027/2026_27_D1%20Black%20Warrior%20WMA%20ADA.pdf', coverage: 'Black Warrior WMA, Sept 2026 – Aug 2027', updated: '2026-27 edition', retrieved: pdfStat.mtime.toISOString(), resolution: 'Document; transcribed into src/engine/regulations.ts', usage: 'Official regulation document', quality: 'verified (manual transcription)' },
@@ -22,6 +27,11 @@ const manual = [
   { id: 'adcnr-rut-map', agency: 'Alabama DCNR – WFF', title: 'Alabama Deer Rut Map (methodology); NW Alabama (Lawrence/Winston) ruts earlier than most of state', url: 'https://www.outdooralabama.com/node/3171', coverage: 'Statewide', updated: null, retrieved: null, resolution: 'Regional', usage: 'Reference', quality: 'county-level dates not machine-readable — phase dates use secondary source (low confidence)' },
   { id: 'al-living-bw-rut', agency: 'Alabama Living (secondary)', title: 'Black Warrior WMA article: rut mid-Nov, peak ~Thanksgiving, into early Dec', url: 'https://alabamaliving.coop/?p=10532', coverage: 'Black Warrior WMA', updated: null, retrieved: null, resolution: 'Narrative', usage: 'Secondary source', quality: 'unverified secondary' },
 ];
-const all = [...boundaries, ...osm, ...meta.sources.map((s) => ({ ...s, updated: s.updated ?? null })), ...manual];
-await fs.writeFile(path.join(ROOT, 'public/data/sources.json'), JSON.stringify({ generated: new Date().toISOString(), terrain: { algorithmVersion: meta.algorithmVersion, generated: meta.generated, parameters: meta.parameters, counts: meta.counts, grid: meta.grid }, sources: all }, null, 2));
+// Talladega WMAs: their own permit (with the traced Zone A/B map) instead of Black Warrior's and the Bankhead-only references
+const regional = REGION_ID === 'bankhead' ? manual : [
+  { id: `adcnr-${REGION_ID}-wma-2026-27`, agency: 'Alabama DCNR – WFF', title: `2026-27 ${PERMITS[REGION_ID].title} map & AREA permit (season dates, bag limits, Zone A/B map, rules)`, url: PERMITS[REGION_ID].url, coverage: PERMITS[REGION_ID].title, updated: '2026-27', retrieved: pdfStat.mtime.toISOString(), resolution: 'Document; deer dates transcribed into src/engine/regulations.ts; zones traced by scripts/build-wma-zones.mjs', usage: 'Official regulation document', quality: 'verified (manual transcription)' },
+  ...manual.filter((m) => !['adcnr-bw-wma-2026-27', 'adcnr-deer-season-2026-27', 'al-living-bw-rut'].includes(m.id)),
+];
+const all = [...boundaries, ...osm, ...meta.sources.map((s) => ({ ...s, updated: s.updated ?? null })), ...regional];
+await fs.writeFile(path.join(OUT, 'sources.json'), JSON.stringify({ generated: new Date().toISOString(), terrain: { algorithmVersion: meta.algorithmVersion, generated: meta.generated, parameters: meta.parameters, counts: meta.counts, grid: meta.grid }, sources: all }, null, 2));
 console.log(all.length, 'sources');

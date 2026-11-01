@@ -8,6 +8,7 @@ import { fmtTime, sunDay, sessionWindows } from './time';
 import { weaponLabel } from './regulations';
 import { roadDistance } from './roads';
 import { rutPhase } from './rut';
+import { REGIONS } from './regions';
 import type { SunDay } from './time';
 
 export interface PlanStep { key: string; title: string; lines: string[]; tone?: 'good' | 'warn' | 'bad' }
@@ -154,7 +155,7 @@ export function buildHuntPlan(rec: HuntRecommendation, timeline: PeakTimeline | 
   const peak = timeline?.peaks.find((pk) => (rec.session === 'morning' ? pk.start < sun.solarNoon : rec.session === 'evening' ? pk.start >= sun.solarNoon : true)) ?? timeline?.peaks[0];
   const walkMin = rec.route ? rec.route.walkMinutes ?? walkMinutes(rec.route.onNetworkMeters, rec.route.offTrailMeters, rec.route.elevationGainMeters ?? 0) : null;
   if (rec.session === 'morning' || rec.session === 'evening') {
-    const st = standTiming(rec.session, sun, rec.huntDate, p.deerZone, walkMin, rec.route?.offTrailMeters ?? 0);
+    const st = standTiming(rec.session, sun, rec.huntDate, p.wmaId ? REGIONS[p.wmaId].rutZone : p.deerZone, walkMin, rec.route?.offTrailMeters ?? 0);
     if (rec.session === 'morning') {
       when.push(`Be in your stand and quiet by ${t(st.settledBy)} — ${st.quietMin} min before legal light (${t(sun.legalStart)}), about ${fmtDur(Math.round((sun.sunrise - st.settledBy) / 60000))} before sunrise. ${st.why[0].toUpperCase()}${st.why.slice(1)}.`);
       if (st.leaveTruckBy != null) when.push(`Get to the truck by ${t(st.arriveTruckBy!)} and start walking by ${t(st.leaveTruckBy)}: ≈${st.walkMin} min walk in the dark (slower than daylight) + ${SETTLE_MIN} min to climb, hang gear and cool off.`);

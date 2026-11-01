@@ -2,7 +2,7 @@
 // zoom in, and everything else is opt-in from the Layers sheet. Boundaries shown belong to the active workspace.
 import { useEffect, useRef } from 'react';
 import * as maplibregl from 'maplibre-gl';
-import type { GeoJSONSource, Map as MLMap, MapMouseEvent, StyleSpecification } from 'maplibre-gl';
+import type { GeoJSONSource, ImageSource, Map as MLMap, MapMouseEvent, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import type { Feature, FeatureCollection, Polygon } from 'geojson';
@@ -10,7 +10,7 @@ import type { AppData } from '../data';
 import type { HuntRecommendation, UserPin } from '../engine/types';
 import type { ClubGeometry } from '../engine/club';
 import { BANKHEAD_CENTER } from '../engine/time';
-import { CLUB_BBOX, STUDY_BBOX } from '../engine/config';
+import { CLUB_BBOX } from '../engine/config';
 import { pathDistance } from '../engine/roads';
 import { bloodTrails } from '../engine/blood';
 import type { WorkspaceKind } from '../lib/workspaces';
@@ -136,6 +136,7 @@ interface Props {
 export function MapView({ data, workspaceKind, dark, base, layers, marks, selected, windHour, userLoc, pins, setups, typeFilter, startPin, clubBoundary, clubRoads, onCandidate, onInspect, mapRef }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const ready = useRef(false);
+  const regionRef = useRef<string | null>(null); // which public area the area-specific sources currently show
   const pending = useRef<Array<() => void>>([]);
   const whenReady = (fn: () => void) => (ready.current ? fn() : pending.current.push(fn));
   const cbs = useRef({ onCandidate, onInspect });
@@ -200,10 +201,11 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
       const text = { 'text-font': ['Noto Sans Regular'] };
       const halo = { 'text-halo-color': '#101510', 'text-halo-width': 1.4 };
       // raster overlays first, so everything else draws above them
-      map.addSource('slope', { type: 'image', url: `${import.meta.env.BASE_URL}data/slope.png`, coordinates: quad([STUDY_BBOX[0], STUDY_BBOX[1], STUDY_BBOX[2], STUDY_BBOX[3]]) });
+      regionRef.current = data.region.id;
+      map.addSource('slope', { type: 'image', url: `${import.meta.env.BASE_URL}data/${data.region.dir}slope.png`, coordinates: quad(data.region.bbox) });
       map.addLayer({ id: 'slope', type: 'raster', source: 'slope', paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
       map.addLayer({ id: 'lidar-hs', type: 'raster', source: 'lidar', minzoom: 12, paint: { 'raster-opacity': 0.55 }, layout: { visibility: 'none' } });
-      map.addSource('disturbance', { type: 'image', url: `${import.meta.env.BASE_URL}data/disturbance.png`, coordinates: quad([STUDY_BBOX[0], STUDY_BBOX[1], STUDY_BBOX[2], STUDY_BBOX[3]]) });
+      map.addSource('disturbance', { type: 'image', url: `${import.meta.env.BASE_URL}data/${data.region.dir}disturbance.png`, coordinates: quad(data.region.bbox) });
       map.addLayer({ id: 'disturbance', type: 'raster', source: 'disturbance', paint: { 'raster-opacity': 0.7, 'raster-resampling': 'nearest' }, layout: { visibility: 'none' } });
       map.addSource('fuel', { type: 'geojson', data: data.fuelTreatments });
       map.addLayer({ id: 'fuel-line', type: 'line', source: 'fuel', paint: { 'line-color': '#ff8a3d', 'line-width': 1.5, 'line-dasharray': [2, 2] }, layout: { visibility: 'none' } });
@@ -227,6 +229,10 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
       map.addLayer({ id: 'wma-line', type: 'line', source: 'wma', paint: { 'line-color': '#e9a824', 'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1.2, 13, 2.4], 'line-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0.75, 13, 1] }, layout: { visibility: 'none' } });
       map.addSource('highways', { type: 'geojson', data: data.highways });
       map.addLayer({ id: 'zone-divider', type: 'line', source: 'highways', filter: ['==', ['get', 'ref'], 'AL 33'], paint: { 'line-color': '#ffd84d', 'line-width': 2, 'line-dasharray': [4, 2] }, layout: { visibility: 'none' } });
+      // Talladega WMAs: Zone A/B outlines traced from the permit map (the outer edge sits under the WMA line)
+      map.addSource('wmazones', { type: 'geojson', data: data.wmaZones });
+      map.addLayer({ id: 'wma-zone-line', type: 'line', source: 'wmazones', paint: { 'line-color': '#ffd84d', 'line-width': 2, 'line-dasharray': [4, 2] }, layout: { visibility: 'none' } }, 'wma-line');
+      map.addLayer({ id: 'wma-zone-label', type: 'symbol', source: 'wmazones', minzoom: 10, layout: { 'text-field': ['concat', 'Zone ', ['get', 'zone']], 'text-size': 12, ...text, visibility: 'none' }, paint: { 'text-color': '#ffe58a', ...halo } });
       map.addSource('club', { type: 'geojson', data: empty });
       map.addLayer({ id: 'club-fill', type: 'fill', source: 'club', paint: { 'fill-color': '#ffd84d', 'fill-opacity': 0.06 }, layout: { visibility: 'none' } });
       map.addLayer({ id: 'club-line', type: 'line', source: 'club', paint: { 'line-color': '#ffd84d', 'line-width': 2.6 }, layout: { visibility: 'none' } });
@@ -281,13 +287,38 @@ export function MapView({ data, workspaceKind, dark, base, layers, marks, select
     if (map.isStyleLoaded()) add(); else map.once('load', add);
   }, [data, mapRef]);
 
+  // ---- switching public areas: point every area-specific source at the new region's data ----
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !data || !regionRef.current || regionRef.current === data.region.id) return;
+    whenReady(() => {
+      regionRef.current = data.region.id;
+      const b = import.meta.env.BASE_URL, q = quad(data.region.bbox);
+      (map.getSource('slope') as ImageSource | undefined)?.updateImage({ url: `${b}data/${data.region.dir}slope.png`, coordinates: q });
+      (map.getSource('disturbance') as ImageSource | undefined)?.updateImage({ url: `${b}data/${data.region.dir}disturbance.png`, coordinates: q });
+      const set = (id: string, fc: unknown) => (map.getSource(id) as GeoJSONSource | undefined)?.setData(fc as FeatureCollection);
+      set('fuel', data.fuelTreatments);
+      set('ownership', { ...data.ownership, features: data.ownership.features.filter((f) => (f.properties as { ownerclassification?: string }).ownerclassification !== 'USDA FOREST SERVICE') });
+      set('wilderness', data.wilderness);
+      set('nf', data.nfAdmin);
+      set('zoned', data.zoneDLines);
+      set('wma', data.wma);
+      set('highways', data.highways);
+      set('wmazones', data.wmaZones);
+      set('fsroads', data.fsRoads);
+      set('trails', data.trails);
+      set('access', { type: 'FeatureCollection', features: [...data.accessPoints.features] });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.region.id, mapRef]);
+
   // ---- visibility: layer toggles + the active workspace's own boundaries ----
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
       const vis = (ids: string[], on: boolean) => ids.forEach((id) => map.getLayer(id) && map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'));
-      vis(['wma-line', 'zone-divider'], layers.boundaries && workspaceKind === 'wma');
+      vis(['wma-line', 'zone-divider', 'wma-zone-line', 'wma-zone-label'], layers.boundaries && workspaceKind === 'wma');
       vis(['nf-line', 'zoned-line', 'zoned-label'], layers.boundaries && workspaceKind === 'nf');
       vis(['club-fill', 'club-line'], layers.boundaries && workspaceKind === 'land');
       vis(['nonfs'], layers.ownership);

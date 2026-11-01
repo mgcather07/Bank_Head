@@ -57,8 +57,8 @@ describe('club workspaces', () => {
   const personal: LandDoc = { ...club.land, id: 'night-shadow', kind: 'club' };
   it('a club replaces the personal copy of the same land', () => {
     const ws = workspacesFor([personal], [club]);
-    expect(ws.map((w) => w.id)).toEqual(['wma', 'nf', 'club:night-shadow']);
-    expect(ws[2].club?.members).toHaveLength(3);
+    expect(ws.map((w) => w.id)).toEqual(['wma', 'nf', 'wma:choccolocco', 'wma:hollins', 'wma:oakmulgee', 'club:night-shadow']);
+    expect(ws[5].club?.members).toHaveLength(3);
   });
   it('the old land:<id> setting opens the club', () => {
     expect(resolveWorkspace('land:night-shadow', [], [club]).id).toBe('club:night-shadow');

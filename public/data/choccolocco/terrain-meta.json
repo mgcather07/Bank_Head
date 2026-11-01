@@ -1,0 +1,91 @@
+{
+  "algorithmVersion": "terrain-1.2.0",
+  "generated": "2026-11-01T22:43:05.090Z",
+  "bbox": [
+    -85.83,
+    33.61,
+    -85.45,
+    33.87
+  ],
+  "grid": {
+    "width": 1368,
+    "height": 936,
+    "cellDeg": 0.0002777777777777778,
+    "approxCellM": [
+      26,
+      31
+    ]
+  },
+  "parameters": {
+    "tpiSmallRadiusCells": 5,
+    "tpiLargeRadiusCells": 25,
+    "streamThresholdKm2": 0.3,
+    "saddleHessianBaselineCells": 3,
+    "dedupeMeters": 400,
+    "contextRadiusM": 300,
+    "recSiteSafetyBufferM": 400,
+    "roadClearanceM": 100,
+    "zoneDividerUncertaintyM": 400
+  },
+  "counts": {
+    "networkNodes": 13866,
+    "raw": 1497,
+    "rejected": {
+      "outsidePublicLand": 880,
+      "outsideWma": 0,
+      "notFsOwned": 0,
+      "safetyBuffer": 13,
+      "nearRoad": 91,
+      "roadCrosses": 18,
+      "tooLarge": 0
+    },
+    "mergedDuplicates": 226,
+    "candidates": 269,
+    "byType": {
+      "saddle": 59,
+      "bench": 63,
+      "spur": 120,
+      "bottom": 27
+    },
+    "accessPoints": 583,
+    "streams": 900
+  },
+  "sources": [
+    {
+      "id": "usgs-3dep-dem",
+      "agency": "USGS National Map",
+      "title": "3DEP Elevation (resampled to 1 arc-second ≈ 26×31 m)",
+      "resolution": "1 arc-second grid (~26 m E-W × 31 m N-S)",
+      "usage": "Public domain",
+      "url": "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/exportImage?bbox=-85.83,33.61,-85.45,33.87&bboxSR=4326&imageSR=4326&size=1368,936&format=tiff&pixelType=F32&noData=-9999&interpolation=RSP_BilinearInterpolation",
+      "retrieved": "2026-11-01T22:40:34.832Z",
+      "checksum": "edbcb1ae170eebd7",
+      "quality": "retrieved",
+      "coverage": "bbox -85.83,33.61,-85.45,33.87"
+    },
+    {
+      "id": "landfire-lf2024-evt",
+      "agency": "USGS / USFS LANDFIRE",
+      "title": "LF2024 Existing Vegetation Type (EVT)",
+      "resolution": "30 m native, nearest-neighbour resampled. Not suitable for individual trees.",
+      "usage": "Public domain",
+      "url": "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_EVT_CONUS/ImageServer/exportImage?bbox=-85.83,33.61,-85.45,33.87&bboxSR=4326&imageSR=4326&size=1368,936&format=tiff&pixelType=S16&interpolation=RSP_NearestNeighbor",
+      "retrieved": "2026-11-01T22:40:36.249Z",
+      "checksum": "48ac71df7f278ad9",
+      "quality": "retrieved",
+      "coverage": "bbox -85.83,33.61,-85.45,33.87"
+    },
+    {
+      "id": "landfire-lf2024-fdist",
+      "agency": "USGS / USFS LANDFIRE",
+      "title": "LF2024 Fuel Disturbance (FDist): disturbance type, severity and age (1 / 2–5 / 6–10 yr)",
+      "resolution": "30 m native, nearest-neighbour resampled",
+      "usage": "Public domain",
+      "url": "https://lfps.usgs.gov/arcgis/rest/services/Landfire_LF2024/LF2024_FDist_CONUS/ImageServer/exportImage?bbox=-85.83,33.61,-85.45,33.87&bboxSR=4326&imageSR=4326&size=1368,936&format=tiff&pixelType=S16&interpolation=RSP_NearestNeighbor",
+      "retrieved": "2026-11-01T22:40:37.290Z",
+      "checksum": "32056ebe5ed970ce",
+      "quality": "retrieved",
+      "coverage": "bbox -85.83,33.61,-85.45,33.87"
+    }
+  ]
+}

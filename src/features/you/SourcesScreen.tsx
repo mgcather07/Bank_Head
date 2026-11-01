@@ -31,7 +31,9 @@ export function SourcesScreen({ registry }: { registry: SourceRegistry | null })
         <h2>Known gaps</h2>
         <ul className="t-sm" style={{ marginTop: 8 }}>
           <li>The Forest Service Motor Vehicle Use Map has no Bankhead coverage in the public service, so vehicle access and gate status are unverified.</li>
-          <li>No official Zone A/B polygon exists in the ADCNR GIS service. The split follows AL 33 from the official permit map, with a 400 m uncertainty band.</li>
+          <li>No official Zone A/B polygon exists in the ADCNR GIS service. On Black Warrior the split follows AL 33 from the official permit map; on Choccolocco and Hollins it is traced from the permit map's zone colours, fitted to the ADCNR WMA boundary. Both carry a 400 m uncertainty band.</li>
+          <li>Talladega National Forest land outside Choccolocco, Hollins and Oakmulgee is shown as public, but its statewide season dates are not loaded — check your deer zone.</li>
+          <li>Rut timing for the Talladega WMAs uses the later central/east Alabama pattern (late December–January), not county dates.</li>
           <li>Parking and kiosk locations on the permit map are not published as GIS. Access points are recreation sites, the check station and roadside points on Forest roads.</li>
           <li>No deer observation, density or harvest data is used. Habitat indicators are potential only.</li>
           <li>Private land uses public elevation, vegetation and OpenStreetMap roads. Farm and lease roads are often missing from OpenStreetMap.</li>

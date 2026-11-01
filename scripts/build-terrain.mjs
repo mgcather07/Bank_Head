@@ -15,9 +15,9 @@ import * as turf from '@turf/turf';
 import { buildNetwork, nearestNode, dijkstra, pathTo } from './lib/network.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const RAW = path.join(ROOT, 'research', 'raw');
-const OUT = path.join(ROOT, 'public', 'data');
-import { BBOX } from './config.mjs';
+import { BBOX, RAW, OUT, RAW_SHARED, REGION, REGION_ID } from './config.mjs';
+await fs.mkdir(RAW, { recursive: true });
+await fs.mkdir(OUT, { recursive: true });
 const W = Math.round((BBOX[2] - BBOX[0]) * 3600);
 const H = Math.round((BBOX[3] - BBOX[1]) * 3600); // 1 arc-second grid
 const DEG = 1 / 3600;
@@ -30,10 +30,21 @@ async function download(id, url, file, meta) {
   try {
     await fs.access(dest);
   } catch {
-    const j = await (await fetch(url + '&f=json', { signal: AbortSignal.timeout(120_000) })).json();
-    if (!j.href) throw new Error(`${id}: ${JSON.stringify(j).slice(0, 300)}`);
-    const buf = Buffer.from(await (await fetch(j.href)).arrayBuffer());
-    await fs.writeFile(dest, buf);
+    // the image servers sometimes answer with an HTML error page — retry, and only keep a real TIFF
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const j = await (await fetch(url + '&f=json', { signal: AbortSignal.timeout(120_000) })).json();
+        if (!j.href) throw new Error(`${id}: ${JSON.stringify(j).slice(0, 300)}`);
+        const buf = Buffer.from(await (await fetch(j.href, { signal: AbortSignal.timeout(180_000) })).arrayBuffer());
+        if (!((buf[0] === 0x49 && buf[1] === 0x49) || (buf[0] === 0x4d && buf[1] === 0x4d))) throw new Error(`${id}: not a TIFF`);
+        await fs.writeFile(dest, buf);
+        break;
+      } catch (e) {
+        if (attempt >= 5) throw e;
+        console.warn(`${id}: attempt ${attempt} failed (${e.message}); retrying`);
+        await new Promise((r) => setTimeout(r, 5000 * attempt));
+      }
+    }
   }
   const buf = await fs.readFile(dest);
   sources.push({ id, ...meta, url, retrieved: (await fs.stat(dest)).mtime.toISOString(), checksum: crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16), quality: 'retrieved', coverage: `bbox ${BBOX.join(',')}` });
@@ -65,7 +76,7 @@ const fdist = await download(
   { agency: 'USGS / USFS LANDFIRE', title: 'LF2024 Fuel Disturbance (FDist): disturbance type, severity and age (1 / 2–5 / 6–10 yr)', resolution: '30 m native, nearest-neighbour resampled', usage: 'Public domain' },
 );
 // disturbance per cell: type (Fire/Mechanical/Insect…), severity, age class — from the FDist attribute CSV
-const fdCsv = (await fs.readFile(path.join(RAW, 'LF2024_FDist.csv'), 'utf8')).split('\n').slice(1);
+const fdCsv = (await fs.readFile(path.join(RAW_SHARED, 'LF2024_FDist.csv'), 'utf8')).split('\n').slice(1);
 const fdInfo = new Map();
 for (const line of fdCsv) { const c = line.split(','); if (c.length > 4 && Number(c[0]) > 0) fdInfo.set(Number(c[0]), { type: c[1], severity: c[2], age: c[3] }); }
 const DIST = new Uint8Array(W * H); // 0 none, 1 fire ≤1y, 2 fire 2–5y, 3 fire 6–10y, 4 cut/thinning ≤1y, 5 cut 2–5y (regrowth = browse), 6 cut 6–10y (thick regrowth = bedding), 7 other
@@ -79,7 +90,7 @@ for (let i = 0; i < W * H; i++) {
 }
 
 // ---------- EVT lookup ----------
-const evtCsv = (await fs.readFile(path.join(RAW, 'LF2024_EVT.csv'), 'utf8')).split('\n').slice(1);
+const evtCsv = (await fs.readFile(path.join(RAW_SHARED, 'LF2024_EVT.csv'), 'utf8')).split('\n').slice(1);
 const evtInfo = new Map();
 for (const line of evtCsv) {
   const c = line.split(',');
@@ -293,13 +304,17 @@ for (let i = 0; i < W * H; i++) {
 const readGeo = async (f) => JSON.parse(await fs.readFile(path.join(OUT, f), 'utf8'));
 const wma = await readGeo('wma.geojson');
 const nfAdmin = await readGeo('nf-admin.geojson');
-const zoneD = await readGeo('deer-zone-d.geojson');
-const zoneDLines = flatLinesEarly(await readGeo('deer-zone-boundary.geojson'));
-const counties = await readGeo('counties.geojson');
+// Statewide deer zones are only modelled for Bankhead; the Talladega WMAs use their own WMA calendars.
+const emptyFc = { type: 'FeatureCollection', features: [] };
+const readGeoOr = async (f) => readGeo(f).catch(() => emptyFc);
+const zoneD = await readGeoOr('deer-zone-d.geojson');
+const zoneDLines = flatLinesEarly(await readGeoOr('deer-zone-boundary.geojson'));
+const counties = await readGeoOr('counties.geojson');
 const ZONE_C_COUNTIES = new Set(['Winston', 'Lawrence', 'Walker', 'Cullman']);
 function flatLinesEarly(fc) { return fc.features.flatMap((f) => (f.geometry.type === 'MultiLineString' ? f.geometry.coordinates.map((c) => turf.lineString(c)) : [f])); }
 /** Statewide deer zone for NF land off the WMA: D inside the reconstructed Zone D line, C in Winston/Lawrence/Walker/Cullman outside it, null within 400 m of the line or elsewhere. */
 function deerZoneFor(pt) {
+  if (!zoneDLines.length) return { deerZone: null, distToDeerZoneLine: null };
   const dLine = Math.min(...zoneDLines.map((l) => turf.pointToLineDistance(pt, l, { units: 'meters' })));
   if (dLine < 400) return { deerZone: null, distToDeerZoneLine: Math.round(dLine) };
   if (zoneD.features.some((f) => turf.booleanPointInPolygon(pt, f))) return { deerZone: 'D', distToDeerZoneLine: Math.round(dLine) };
@@ -351,7 +366,7 @@ for (const a of accessPoints) accessNode.set(a.id, nearestNode(net, a.coord, 60)
 const dijkstraCache = new Map();
 const sssp = (node) => { if (!dijkstraCache.has(node)) dijkstraCache.set(node, dijkstra(net, node, 12000)); return dijkstraCache.get(node); };
 
-const al33 = highways.features.filter((f) => f.properties.ref === 'AL 33');
+const al33 = REGION_ID === 'bankhead' ? highways.features.filter((f) => f.properties.ref === 'AL 33') : [];
 function zoneFor(pt) {
   // Official 2026-27 permit map: Zone B lies east of AL 33, Zone A west. Divider digitized from OSM AL 33 centerline.
   let best = null;
@@ -446,8 +461,10 @@ for (const r of raw) {
   const pt = turf.point([lon, lat]);
   // Public land: Black Warrior WMA, or Forest Service-owned land inside the Bankhead NF boundary.
   const inWma = inAny(pt, wma.features);
-  if (!inWma && !inAny(pt, nfAdmin.features)) { rejected.outsidePublicLand++; continue; }
-  if (!inAny(pt, fsOwned)) { rejected.notFsOwned++; continue; }
+  // Talladega WMAs: the ADCNR boundary (holes = excluded parcels) is what makes land huntable under WMA rules, so
+  // zones are kept to it; Bankhead also covers Forest Service land outside the WMA, which must be FS-owned.
+  if (REGION.wmaOnly ? !inWma : !inWma && !inAny(pt, nfAdmin.features)) { rejected.outsidePublicLand++; continue; }
+  if (!REGION.wmaOnly && !inAny(pt, fsOwned)) { rejected.notFsOwned++; continue; }
   const nearRec = recSites.features.some((f) => turf.distance(pt, f, { units: "meters" }) < 400);
   if (nearRec) { rejected.safetyBuffer++; continue; }
   if (Math.min(...roadLines.map((l) => turf.pointToLineDistance(pt, l, { units: 'meters' }))) < ROAD_CLEARANCE_M) { rejected.nearRoad++; continue; }
@@ -555,7 +572,7 @@ for (const r of raw) {
   }).sort((p, q) => p.walkMeters - q.walkMeters).slice(0, 2);
 
   const zoneInfo = inWma ? zoneFor(pt) : { zone: null, provisionalZone: null, distToDivider: null };
-  const dz = inWma ? { deerZone: 'D', distToDeerZoneLine: null } : deerZoneFor(pt);
+  const dz = REGION.wmaOnly ? { deerZone: null, distToDeerZoneLine: null } : inWma ? { deerZone: 'D', distToDeerZoneLine: null } : deerZoneFor(pt);
   const wilderness = inAny(pt, wild.features);
   const distTrail = Math.min(...trailLines.map((f) => turf.pointToLineDistance(pt, f, { units: 'meters' })));
   const distRoad = Math.min(...roadLines.map((f) => turf.pointToLineDistance(pt, f, { units: 'meters' })));
@@ -578,7 +595,7 @@ for (const r of raw) {
       disturbance: Object.fromEntries(Object.entries(disturbance).map(([k, v]) => [k, +v.toFixed(3)])),
       beddingCoverBearing: beddingBearing ? Math.round(beddingBearing.mean) : null, beddingCoverConsistency: beddingBearing ? +beddingBearing.r.toFixed(2) : null,
       foodWaterBearing: foodWaterBearing ? Math.round(foodWaterBearing.mean) : null, foodWaterConsistency: foodWaterBearing ? +foodWaterBearing.r.toFixed(2) : null,
-      jurisdiction: inWma ? 'black_warrior_wma' : 'nf_outside_wma', deerZone: dz.deerZone, distToDeerZoneLine: dz.distToDeerZoneLine,
+      jurisdiction: inWma ? REGION.jurisdiction : 'nf_outside_wma', ...(REGION.wmaOnly ? { wmaId: REGION_ID, fsOwned: inAny(pt, fsOwned) } : {}), deerZone: dz.deerZone, distToDeerZoneLine: dz.distToDeerZoneLine,
       zone: zoneInfo.zone, provisionalZone: zoneInfo.provisionalZone, distToZoneDivider: zoneInfo.distToDivider, wilderness, areaHa: +areaHa.toFixed(1), routes,
     },
   });
@@ -599,7 +616,7 @@ const features = kept.map((c, i) => ({
   type: 'Feature',
   id: i + 1,
   geometry: c.geometry,
-  properties: { id: `BH-${c.type.slice(0, 2).toUpperCase()}-${String(i + 1).padStart(4, '0')}`, type: c.type, label: c.label, terrainScore: c.terrainScore, center: [+c.lon.toFixed(6), +c.lat.toFixed(6)], ...c.props },
+  properties: { id: `${REGION.prefix}-${c.type.slice(0, 2).toUpperCase()}-${String(i + 1).padStart(4, '0')}`, type: c.type, label: c.label, terrainScore: c.terrainScore, center: [+c.lon.toFixed(6), +c.lat.toFixed(6)], ...c.props },
 }));
 await fs.writeFile(path.join(OUT, 'candidates.geojson'), JSON.stringify({ type: 'FeatureCollection', features }));
 await fs.writeFile(path.join(OUT, 'access-points.geojson'), JSON.stringify(turf.featureCollection(accessPoints.filter((a) => a.kind !== 'roadside').map((a) => turf.point(a.coord, { id: a.id, name: a.name, kind: a.kind, verification: a.verified })))));

@@ -8,6 +8,11 @@ dev-dist
 research/raw/*.tif
 research/raw/*.pdf
 research/raw/*.geojson
+research/raw/*/*.tif
+research/raw/*/*.pdf
+research/raw/*/*.png
+research/raw/*/*.geojson
+research/raw/*/dem10/
 
 # personal land boundaries stay local, never committed
 private/

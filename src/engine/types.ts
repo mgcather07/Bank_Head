@@ -1,3 +1,4 @@
+import type { WmaId } from './regions';
 import type { Geometry, Polygon, MultiPolygon } from 'geojson';
 
 export type Session = 'morning' | 'midday' | 'evening';
@@ -91,7 +92,11 @@ export interface CandidateProps {
   areaHa: number;
   routes: RouteOption[];
   /** Set for user-checked spots; generated candidates are always inside the WMA on FS land. */
-  jurisdiction?: 'black_warrior_wma' | 'nf_outside_wma' | 'private_or_unknown' | 'private_club';
+  jurisdiction?: 'black_warrior_wma' | 'state_wma' | 'nf_outside_wma' | 'private_or_unknown' | 'private_club';
+  /** Which Talladega NF WMA (jurisdiction 'state_wma'); its calendar is in regulations.ts. */
+  wmaId?: WmaId;
+  /** Inside a Talladega WMA: whether USFS records show Forest Service title (other land is WMA land under lease or agreement). */
+  fsOwned?: boolean;
   landform?: string;
   /** Statewide deer zone (C or D); null near the C/D line. WMA zones use the WMA calendar. */
   deerZone?: 'C' | 'D' | null;

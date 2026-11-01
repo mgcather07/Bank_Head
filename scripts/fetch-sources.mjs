@@ -7,9 +7,7 @@ import path from 'node:path';
 import * as turf from '@turf/turf';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const RAW = path.join(ROOT, 'research', 'raw');
-const OUT = path.join(ROOT, 'public', 'data');
-import { BBOX } from './config.mjs';
+import { BBOX, RAW, OUT, REGION, DATA_PREFIX } from './config.mjs';
 export { BBOX };
 
 const FS = 'https://apps.fs.usda.gov/arcx/rest/services/EDW';
@@ -19,9 +17,9 @@ const LAYERS = [
   {
     id: 'adcnr-wma-boundary',
     agency: 'Alabama DCNR – Wildlife & Freshwater Fisheries',
-    title: 'Wildlife Management Areas (Black Warrior WMA, MapYear 2026-27)',
+    title: 'Wildlife Management Areas (MapYear 2026-27)',
     url: ADCNR,
-    where: "Name = 'Black Warrior Wildlife Management Area'",
+    where: REGION.wmaWhere,
     fields: 'Name,MapYear,Acres,Link',
     file: 'wma.geojson',
     resolution: 'Vector; agency-drawn hunting boundary (not a survey). Interior holes = excluded parcels.',
@@ -32,7 +30,7 @@ const LAYERS = [
     agency: 'USDA Forest Service',
     title: 'National Forest System Land Units (administrative boundary)',
     url: `${FS}/EDW_NFSLandUnit_01/MapServer/0`,
-    where: "NFSLANDUNITNAME LIKE '%Bankhead%' OR NFSLANDUNITNAME LIKE '%William B. Bankhead%'",
+    where: REGION.nfWhere,
     fields: '*',
     file: 'nf-admin.geojson',
     resolution: 'Vector; proclaimed/administrative boundary. Does NOT imply federal ownership of every parcel.',
@@ -52,9 +50,9 @@ const LAYERS = [
   {
     id: 'usfs-wilderness',
     agency: 'USDA Forest Service',
-    title: 'National Wilderness Areas (Sipsey Wilderness)',
+    title: 'National Wilderness Areas',
     url: `${FS}/EDW_Wilderness_01/MapServer/0`,
-    where: "WILDERNESSNAME LIKE '%Sipsey%'",
+    where: REGION.wildernessWhere,
     fields: '*',
     file: 'wilderness.geojson',
     resolution: 'Vector; congressionally designated wilderness.',
@@ -216,7 +214,7 @@ for (const layer of LAYERS) {
       quality: clipped.features.length ? 'retrieved' : 'empty',
       featureCount: clipped.features.length,
       checksum: crypto.createHash('sha256').update(body).digest('hex').slice(0, 16),
-      file: `data/${layer.file}`,
+      file: `${DATA_PREFIX}${layer.file}`,
     });
     console.log(`${clipped.features.length} features`);
   } catch (e) {

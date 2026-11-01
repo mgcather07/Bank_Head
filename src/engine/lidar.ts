@@ -23,6 +23,8 @@ export interface LidarLayers {
   ownership?: FeatureCollection<Polygon | MultiPolygon>;
   /** Private club: only ground inside this boundary (plus mapped roads and paths) may be walked; everything else is a neighbor's land. */
   walkable?: Polygon | MultiPolygon;
+  /** Talladega WMAs: land inside the WMA boundary is open whoever holds title (holes keep their ownership). */
+  open?: FeatureCollection<Polygon | MultiPolygon>;
   water?: FeatureCollection<Polygon | MultiPolygon>;
   lines: Array<FeatureCollection<LineString | MultiLineString> | undefined>; // roads + trails (walkable, faster)
 }
@@ -84,6 +86,7 @@ function prepare(grid: Grid, bbox: BBox, net: WalkNetwork, layers: LidarLayers, 
   const blocked = new Uint8Array(w * h), onPath = new Uint8Array(w * h);
   const ringsOf = (g: Polygon | MultiPolygon) => (g.type === 'Polygon' ? [g.coordinates] : g.coordinates).map((p) => p.map((r) => r.map(toPx)));
   for (const f of layers.ownership?.features ?? []) if ((f.properties as { ownerclassification?: string })?.ownerclassification !== 'USDA FOREST SERVICE') for (const p of ringsOf(f.geometry)) fillRings(p, w, h, blocked, 1);
+  for (const f of layers.open?.features ?? []) for (const p of ringsOf(f.geometry)) fillRings(p, w, h, blocked, 0);
   if (layers.walkable) {
     const ok = new Uint8Array(w * h);
     for (const p of ringsOf(layers.walkable)) fillRings(p, w, h, ok, 1);

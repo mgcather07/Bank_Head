@@ -1,0 +1,1 @@
+{"version":"terrain-1.2.0","bbox":[-85.83,33.61,-85.45,33.87],"width":684,"height":468,"cellDeg":0.0005555555555555556,"layout":["elev:u16/2","slope:u8/4","aspect:u8*2","tpiL:i8/25","tpiS:i8/25","distStream:u8*8","mask:u8","hab:u8"]}

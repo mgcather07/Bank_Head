@@ -24,11 +24,11 @@ export function InspectPanel({ pt, j, legalSummary, onClose, onAddPin, onSetStar
       </div>
       {!priv && (
         <ul className="t-sm facts-list">
-          <li>Black Warrior WMA: <b>{j.inWma ? 'inside' : 'outside'}</b></li>
+          <li>{j.wmaName ?? 'WMA'}: <b>{j.inWma ? 'inside' : 'outside'}</b></li>
           <li>Forest Service ownership: <b>{j.fsOwned == null ? 'unknown' : j.fsOwned ? 'USDA Forest Service' : 'not Forest Service'}</b></li>
-          <li>Zone: <b>{j.zone ?? (j.provisionalZone ? `${j.provisionalZone}? (unconfirmed)` : '—')}</b>{j.distToDividerM != null && ` · ${j.distToDividerM} m from AL 33`}</li>
-          <li>Statewide deer zone: <b>{j.deerZone ?? 'uncertain (near the C/D line)'}</b></li>
-          {j.wilderness && <li>Sipsey Wilderness: <b>yes</b></li>}
+          {(j.zone || j.provisionalZone) && <li>Zone: <b>{j.zone ?? `${j.provisionalZone}? (unconfirmed)`}</b>{j.distToDividerM != null && ` · ${j.distToDividerM} m from the ${j.wmaId ? 'A/B line' : 'AL 33 divider'}`}</li>}
+          {!j.wmaId && j.kind !== 'state_wma' && <li>Statewide deer zone: <b>{j.deerZone ?? 'uncertain (near the C/D line)'}</b></li>}
+          {j.wilderness && <li>{j.wmaId ? 'Wilderness' : 'Sipsey Wilderness'}: <b>yes</b></li>}
         </ul>
       )}
       <Notice tone={j.kind === 'private_or_unknown' ? 'warn' : 'info'} title={legalSummary}>{j.notes.slice(0, 2).join(' ')}</Notice>

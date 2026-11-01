@@ -7,14 +7,12 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fromArrayBuffer } from 'geotiff';
 import * as turf from '@turf/turf';
-import { BBOX } from './config.mjs';
+import { BBOX, RAW, OUT, REGION } from './config.mjs';
 import { overpass } from './lib/overpass.mjs';
 import { buildNetwork, nearestNode } from './lib/network.mjs';
 import { slopeDeg, fillRings, drawLines, findPath, simplify, flatWaterMask } from '../src/engine/pathfind.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const RAW = path.join(ROOT, 'research', 'raw');
-const OUT = path.join(ROOT, 'public', 'data');
 const readGeo = async (f) => JSON.parse(await fs.readFile(path.join(OUT, f), 'utf8'));
 const t0 = Date.now();
 const log = (...a) => console.log(`[${((Date.now() - t0) / 1000).toFixed(0)}s]`, ...a);
@@ -62,6 +60,8 @@ const ringsOf = (g) => (g.type === 'Polygon' ? [g.coordinates] : g.type === 'Mul
 const blocked = new Uint8Array(W * H);
 const own = await readGeo('ownership.geojson');
 for (const f of own.features) if (f.properties.ownerclassification !== 'USDA FOREST SERVICE') for (const poly of ringsOf(f.geometry)) fillRings(poly, W, H, blocked, 1);
+// Talladega WMAs: land inside the ADCNR WMA boundary is open under WMA rules whoever holds title (holes stay as they were)
+if (REGION.wmaOnly) for (const f of (await readGeo('wma.geojson')).features) for (const poly of ringsOf(f.geometry)) fillRings(poly, W, H, blocked, 0);
 // open water: hydro-flattened lake/pond/river surfaces in the lidar-derived DEM (≥ 1 ha of dead-flat ground)
 const waterMask = flatWaterMask({ w: W, h: H, dx: DX, dy: DY, elev }, Math.round(10000 / (DX * DY)));
 let waterCells = 0;

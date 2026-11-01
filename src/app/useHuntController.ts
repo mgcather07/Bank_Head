@@ -26,7 +26,8 @@ import { usePins, useLands, usePref } from '../lib/data';
 import { useClubs } from '../lib/club-data';
 import { useLocal } from '../lib/local';
 import { uid } from '../lib/id';
-import { filterCandidates, legalProbes, resolveWorkspace, workspaceCenter, workspacesFor, youthWindow, type Workspace } from '../lib/workspaces';
+import { filterCandidates, legalProbes, regionOf, resolveWorkspace, workspaceCenter, workspacesFor, youthWindow, type Workspace } from '../lib/workspaces';
+import { REGIONS, type RegionId, type WmaId } from '../engine/regions';
 import { useWeatherData } from './useWeatherData';
 import type { OutlookDay } from '../features/outlook/OutlookScreen';
 import { DEFAULT_LAYERS } from '../features/explore/layers';
@@ -50,11 +51,10 @@ export function useHuntController() {
   const [areas, setAreas] = useLocal<SavedArea[]>('bh.areas.v1', []);
 
   // ---- data ----
-  const [baseData, setBaseData] = useState<AppData | null>(null);
+  const [regionData, setRegionData] = useState<Partial<Record<RegionId, AppData>>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [clubData, setClubData] = useState<ClubData | null>(null);
   const [clubError, setClubError] = useState<string | null>(null);
-  useEffect(() => { loadData().then((d) => { setRoadIndex(buildRoadIndex(d.fsRoads, d.highways, d.osmRoads)); setPathIndex(buildRoadIndex(d.fsRoads, d.highways, d.osmRoads, d.trails)); setBaseData(d); }).catch((e) => setLoadError(String(e))); }, []);
   const needsClub = lands.some((l) => l.pack === 'club') || clubs.some((c) => c.land.pack === 'club');
   useEffect(() => { if (needsClub && !clubData) loadClubData().then(setClubData).catch((e) => setClubError(`Could not load the terrain data for your land: ${e}`)); }, [needsClub, clubData]);
 
@@ -62,6 +62,20 @@ export function useHuntController() {
   const workspaces = useMemo(() => workspacesFor(lands, clubs), [lands, clubs]);
   const workspace: Workspace = useMemo(() => resolveWorkspace(workspaceId, lands, clubs), [workspaceId, lands, clubs]);
   const land = workspace.land ?? null;
+  // each public area has its own data pack; private lands use Bankhead's shared layers
+  const regionId = regionOf(workspace);
+  const baseData = regionData[regionId] ?? null;
+  useEffect(() => {
+    if (regionData[regionId]) return;
+    setLoadError(null);
+    loadData(regionId).then((d) => setRegionData((m) => ({ ...m, [regionId]: d }))).catch((e) => setLoadError(String(e)));
+  }, [regionId, regionData]);
+  useEffect(() => {
+    if (!baseData) return;
+    setRoadIndex(buildRoadIndex(baseData.fsRoads, baseData.highways, baseData.osmRoads));
+    setPathIndex(buildRoadIndex(baseData.fsRoads, baseData.highways, baseData.osmRoads, baseData.trails));
+    netRef.current = null;
+  }, [baseData]);
   const landReady = !land || !!clubData;
 
   // pins and club snapshots arrive as new objects; only rebuild when the parking pins or the boundary really change
@@ -296,7 +310,7 @@ export function useHuntController() {
     const isSpot = id.startsWith('SPOT-');
     const near = c.properties.routes[0];
     const radiusM = Math.min(2400, Math.max(1100, (near ? haversine(near.coord, c.properties.center) : 1200) + 350));
-    const layerSet = land && clubData ? { walkable: land.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
+    const layerSet = land && clubData ? { walkable: land.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, open: data.region.wmaId ? data.wma : undefined, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
     const shape = isSpot ? (land ? clubShapeOptions(land.geometry) : {}) : false; // public zones keep the build's outlines
     inflight.current = id;
     setLidar((m) => ({ ...m, [id]: 'loading' }));
@@ -331,9 +345,9 @@ export function useHuntController() {
     const m = mapRef.current;
     if (!m) return;
     if (ws.land) { const b = clubBounds(ws.land.geometry); m.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: pad(), maxZoom: 15.5, duration: 800 }); }
-    else if (data && ws.kind === 'wma') m.fitBounds([[-87.62, 34.02], [-87.12, 34.4]], { padding: pad(), duration: 800 });
+    else if (ws.kind === 'wma') m.fitBounds(REGIONS[regionOf(ws)].bounds, { padding: pad(), duration: 800 });
     else m.fitBounds([[-87.66, 33.98], [-87.08, 34.48]], { padding: pad(), duration: 800 });
-  }, [data]);
+  }, []);
 
   const switchWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);
@@ -379,7 +393,7 @@ export function useHuntController() {
     if (!data) return;
     try {
       setChecking('Loading terrain…');
-      const grid = await loadGrid(land ? 'club' : 'bankhead');
+      const grid = await loadGrid(land ? 'club' : regionId);
       setChecking('Building trail network…');
       await new Promise((r) => setTimeout(r, 0));
       const net = getNet();
@@ -389,7 +403,7 @@ export function useHuntController() {
       if ('error' in res) { setChecking(null); setSpotError(res.error); return; }
       if (net) {
         // walk in over the terrain right away; the lidar version follows when online
-        const layerSet = land && clubData ? { walkable: land.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
+        const layerSet = land && clubData ? { walkable: land.geometry, water: data.water, lines: [clubData.roads] } : { ownership: data.ownership, open: data.region.wmaId ? data.wma : undefined, water: data.water, lines: [data.fsRoads, data.trails, data.highways, data.osmRoads] };
         const tr = terrainRoutes(grid, [{ id: 'spot', center: res.properties.center }], net, layerSet).spot;
         if (tr) res.properties.routes = [tr, ...res.properties.routes];
       }
@@ -402,30 +416,40 @@ export function useHuntController() {
       openRec(best);
     } catch (e) { console.error(e); setChecking('error'); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, land, clubData, getNet, prefs, weather, pins, normals, openRec]);
+  }, [data, land, clubData, getNet, prefs, weather, pins, normals, openRec, regionId]);
   const [spotError, setSpotError] = useState<string | null>(null);
 
-  // deep links: ?zone=BH-… / ?spot=lon,lat (public workspaces only)
+  // deep links: ?zone=BH-… (or CH-/HO-/OK- for the Talladega WMAs) / ?spot=lon,lat (public workspaces only)
   const deepLinked = useRef(false);
+  const [pendingZone, setPendingZone] = useState<{ id: string; date?: string; session?: Session } | null>(null);
   useEffect(() => {
-    if (deepLinked.current || !baseData) return;
+    if (deepLinked.current) return;
     deepLinked.current = true;
     const q = new URLSearchParams(window.location.search);
     const spotQ = q.get('spot')?.split(',').map(Number);
     const sess = (['morning', 'midday', 'evening'].includes(q.get('session') ?? '') ? q.get('session') : undefined) as Session | undefined;
     if (spotQ && spotQ.length === 2 && spotQ.every(Number.isFinite)) { setPendingSpot({ pt: [spotQ[0], spotQ[1]], date: q.get('date') ?? undefined, session: sess }); window.history.replaceState(null, '', window.location.pathname); }
     const zone = q.get('zone');
-    const cand = zone ? baseData.candidates.find((c) => c.properties.id === zone) : null;
-    if (zone && cand) {
-      const ws = cand.properties.jurisdiction === 'nf_outside_wma' ? 'nf' : 'wma';
-      setWorkspaceId(ws);
-      const date = q.get('date') && q.get('date')! >= localDate() ? q.get('date')! : localDate();
-      setSelectedKey({ id: zone, session: (sess ?? 'evening') as Session, date });
+    if (zone) {
+      const wma = ({ CH: 'choccolocco', HO: 'hollins', OK: 'oakmulgee' } as Record<string, WmaId>)[zone.slice(0, 2)];
+      setWorkspaceId(wma ? `wma:${wma}` : 'wma'); // a BH- zone may be off the WMA; corrected once the data is in
+      setPendingZone({ id: zone, date: q.get('date') ?? undefined, session: sess });
       window.history.replaceState(null, '', window.location.pathname);
-      setTimeout(() => { const c = findCand(zone); if (c) fitZone(evaluateCandidate(c, sess ?? 'evening', { prefs, weather: null, pins: [], normals: null })); }, 900);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseData]);
+  }, []);
+  useEffect(() => {
+    if (!pendingZone || !baseData) return;
+    const { id: zone, session: sess } = pendingZone;
+    const cand = baseData.candidates.find((c) => c.properties.id === zone);
+    if (!cand) { if (baseData.region.id === regionId) setPendingZone(null); return; }
+    setPendingZone(null);
+    if (cand.properties.jurisdiction === 'nf_outside_wma' && regionId === 'bankhead') setWorkspaceId('nf');
+    const date = pendingZone.date && pendingZone.date >= localDate() ? pendingZone.date : localDate();
+    setSelectedKey({ id: zone, session: (sess ?? 'evening') as Session, date });
+    setTimeout(() => { const c = findCand(zone); if (c) fitZone(evaluateCandidate(c, sess ?? 'evening', { prefs, weather: null, pins: [], normals: null })); }, 900);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingZone, baseData]);
   useEffect(() => { if (pendingSpot && data && landReady) { const p = pendingSpot; setPendingSpot(null); void checkSpot(p.pt, { date: p.date, session: p.session }); } }, [pendingSpot, data, landReady, checkSpot]);
 
   const onGps = useCallback(() => {

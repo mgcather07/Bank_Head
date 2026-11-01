@@ -13,7 +13,7 @@ export default defineConfig({
       manifest: {
         name: 'Stand Point',
         short_name: 'Stand Point',
-        description: 'Terrain, wind, regulation and weather intelligence for Black Warrior WMA, the National Forest and your own hunting land.',
+        description: 'Terrain, wind, regulation and weather intelligence for Black Warrior, Choccolocco, Hollins and Oakmulgee WMAs, the National Forest and your own hunting land.',
         theme_color: '#08090c',
         background_color: '#08090c',
         display: 'standalone',
@@ -26,11 +26,18 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,json,geojson,gz}'],
+        // the Talladega WMAs' data packs download the first time you open that area, then stay cached for offline use
+        globIgnores: ['**/data/choccolocco/**', '**/data/hollins/**', '**/data/oakmulgee/**'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         navigateFallback: '/index.html',
         // Firebase's sign-in handler must come from the network, never the app shell
         navigateFallbackDenylist: [/^\/__\//],
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) => /^\/data\/(choccolocco|hollins|oakmulgee)\//.test(url.pathname),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'area-data', expiration: { maxEntries: 200 } },
+          },
           {
             // USGS basemap tiles: cache what the hunter has viewed for offline use
             urlPattern: /^https:\/\/basemap\.nationalmap\.gov\/.*/,
